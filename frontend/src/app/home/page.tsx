@@ -6,12 +6,16 @@ import { useAuth } from '@/context/AuthContext';
 import { Loader2, Settings, MessageCircle, Check, CheckCheck } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import Link from 'next/link';
+import { useNotifications } from '@/hooks/useNotifications';
+import { getSocket } from '@/lib/socket';
 
 export default function HomePage() {
     const { user, profile, loading: authLoading } = useAuth();
     const [chats, setChats] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [typingChats, setTypingChats] = useState<Record<string, boolean>>({});
+    const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+    const { showNotification } = useNotifications();
 
     useEffect(() => {
         if (user) {
@@ -23,7 +27,19 @@ export default function HomePage() {
                 .on(
                     'postgres_changes',
                     { event: 'INSERT', schema: 'public', table: 'messages' },
-                    () => {
+                    (payload) => {
+                        const newMsg = payload.new;
+                        if (newMsg.sender_id !== user.id) {
+                            // Find which chat this belongs to
+                            setChats(currentChats => {
+                                const chat = currentChats.find(c => c.id === newMsg.chat_id);
+                                showNotification(
+                                    chat?.recipient?.display_name || chat?.recipient?.username || 'New Message',
+                                    newMsg.content
+                                );
+                                return currentChats;
+                            });
+                        }
                         // Refresh chat list when new message arrives
                         fetchChats();
                     }
@@ -55,6 +71,50 @@ export default function HomePage() {
                 supabase.removeChannel(channel);
             };
         }
+    }, [user]);
+
+    // Listen for online/offline status updates
+    useEffect(() => {
+        if (!user) return;
+
+        const socket = getSocket(user.id);
+
+        // Listen for users coming online
+        socket.on('user-online', ({ userId }: { userId: string }) => {
+            setOnlineUsers(prev => new Set(prev).add(userId));
+        });
+
+        // Listen for users going offline
+        socket.on('user-offline', ({ userId }: { userId: string }) => {
+            setOnlineUsers(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(userId);
+                return newSet;
+            });
+        });
+
+
+        // Fetch initial online users from server
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
+        if (socketUrl) {
+            fetch(`${socketUrl}/online-users`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to fetch');
+                    return res.json();
+                })
+                .then(data => {
+                    setOnlineUsers(new Set(data.onlineUsers || []));
+                })
+                .catch(err => {
+                    console.error('Failed to fetch online users:', err);
+                    // Silently fail - online status will update via socket events
+                });
+        }
+
+        return () => {
+            socket.off('user-online');
+            socket.off('user-offline');
+        };
     }, [user]);
 
     const fetchChats = async () => {
@@ -171,9 +231,9 @@ export default function HomePage() {
                         <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">@{profile?.username}</p>
                     </div>
                 </div>
-                <button className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-400">
+                <Link href="/settings" className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-400">
                     <Settings className="w-6 h-6" />
-                </button>
+                </Link>
             </div>
 
             {/* Chat List */}
@@ -206,8 +266,10 @@ export default function HomePage() {
                                             <span className="text-xl font-bold text-zinc-500">{chat.recipient.display_name?.[0]}</span>
                                         )}
                                     </div>
-                                    {/* Online indicator - always show logic or just keep static green if simplified */}
-                                    <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-black shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+                                    {/* Online indicator - only show if user is actually online */}
+                                    {onlineUsers.has(chat.recipient.user_id) && (
+                                        <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-black shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+                                    )}
                                 </div>
 
                                 <div className="flex-1 min-w-0">

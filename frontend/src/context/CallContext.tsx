@@ -6,6 +6,7 @@ import { useAuth } from './AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import IncomingCallModal from '@/components/IncomingCallModal';
 import { AnimatePresence } from 'framer-motion';
+import { getSocket } from '@/lib/socket';
 
 interface IncomingCall {
     id: string;
@@ -35,73 +36,71 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         if (!user) return;
 
-        // Listen for incoming calls globally
-        const callsChannel = supabase
-            .channel('global-incoming-calls')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'calls',
-                    filter: `receiver_id=eq.${user.id}`
-                },
-                async (payload: { new: any }) => {
-                    const call = payload.new;
+        const socket = getSocket(user.id);
 
-                    // Fetch caller details
-                    const { data: callerProfile } = await supabase
-                        .from('profiles')
-                        .select('display_name, avatar_url')
-                        .eq('id', call.caller_id)
-                        .single();
+        const handleIncomingCall = async (data: any) => {
+            const { from, offer, callerName, type, chatId, callId } = data;
 
-                    if (callerProfile) {
-                        setIncomingCall({
-                            id: call.id,
-                            caller_id: call.caller_id,
-                            caller_name: callerProfile.display_name,
-                            caller_avatar: callerProfile.avatar_url,
-                            chat_id: call.chat_id,
-                            call_type: call.call_type
-                        });
-                    }
-                }
-            )
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'calls',
-                    filter: `receiver_id=eq.${user.id}`
-                },
-                (payload: { new: any }) => {
-                    const call = payload.new;
-                    // Clear incoming call if rejected or ended
-                    if (call.status === 'rejected' || call.status === 'ended') {
-                        setIncomingCall(null);
-                    }
-                }
-            )
-            .subscribe();
+            // Fetch avatar
+            const { data: p } = await supabase.from('profiles').select('avatar_url').eq('id', from).single();
+
+            setIncomingCall({
+                id: callId || 'temp',
+                caller_id: from,
+                caller_name: callerName || 'Unknown',
+                caller_avatar: p?.avatar_url,
+                chat_id: chatId,
+                call_type: type
+            });
+
+            // Play ringtone
+            const ringtone = new Audio('https://assets.mixkit.co/active_storage/sfx/1344/1344-preview.mp3');
+            ringtone.loop = true;
+            (window as any).currentRingtone = ringtone;
+            ringtone.play().catch(e => console.log('Audio error:', e));
+        };
+
+        const handleCallEnded = () => {
+            setIncomingCall(null);
+            if ((window as any).currentRingtone) {
+                (window as any).currentRingtone.pause();
+                (window as any).currentRingtone = null;
+            }
+        };
+
+        socket.on('incoming-call', handleIncomingCall);
+        socket.on('call-ended', handleCallEnded);
+        socket.on('call-rejected', handleCallEnded);
 
         return () => {
-            supabase.removeChannel(callsChannel);
+            socket.off('incoming-call', handleIncomingCall);
+            socket.off('call-ended', handleCallEnded);
+            socket.off('call-rejected', handleCallEnded);
         };
     }, [user]);
 
     const handleAccept = () => {
         if (!incomingCall) return;
+        if ((window as any).currentRingtone) {
+            (window as any).currentRingtone.pause();
+            (window as any).currentRingtone = null;
+        }
         const chatId = incomingCall.chat_id;
         const callId = incomingCall.id;
         setIncomingCall(null);
-        // Redirect to chat page with autoAnswer flag
         router.push(`/chat/${chatId}?autoAnswer=${callId}`);
     };
 
     const handleReject = async () => {
         if (!incomingCall) return;
+        if ((window as any).currentRingtone) {
+            (window as any).currentRingtone.pause();
+            (window as any).currentRingtone = null;
+        }
+
+        const socket = getSocket(user!.id);
+        socket.emit('reject-call', { to: incomingCall.caller_id });
+
         const callId = incomingCall.id;
         setIncomingCall(null);
         await supabase.from('calls').update({
@@ -121,6 +120,7 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
                     <IncomingCallModal
                         callerName={incomingCall.caller_name}
                         callerAvatar={incomingCall.caller_avatar}
+                        type={incomingCall.call_type}
                         onAccept={handleAccept}
                         onReject={handleReject}
                     />

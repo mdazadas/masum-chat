@@ -1,20 +1,22 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Phone, PhoneOff, Video } from 'lucide-react';
+import { Phone, PhoneOff, Video, Mic } from 'lucide-react';
 
 interface IncomingCallModalProps {
     callerName: string;
     callerAvatar?: string;
     onAccept: () => void;
     onReject: () => void;
+    type?: 'video' | 'audio';
 }
 
 export default function IncomingCallModal({
     callerName,
     callerAvatar,
     onAccept,
-    onReject
+    onReject,
+    type = 'video'
 }: IncomingCallModalProps) {
     return (
         <motion.div
@@ -81,8 +83,8 @@ export default function IncomingCallModal({
                 <div className="space-y-2">
                     <h2 className="text-3xl font-bold text-white">{callerName}</h2>
                     <div className="flex items-center justify-center gap-2 text-accent">
-                        <Video className="w-5 h-5" />
-                        <p className="text-lg font-medium">Incoming video call...</p>
+                        {type === 'video' ? <Video className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                        <p className="text-lg font-medium">Incoming {type} call...</p>
                     </div>
                 </div>
 

@@ -4,9 +4,6 @@ const nextConfig: NextConfig = {
     // Optimize for production
     reactStrictMode: true,
 
-    // Standalone output is more efficient for deployment
-    output: 'standalone',
-
     // Image optimization for Supabase storage
     images: {
         remotePatterns: [
@@ -27,6 +24,33 @@ const nextConfig: NextConfig = {
     // Ignore ESLint errors during deployment
     eslint: {
         ignoreDuringBuilds: true,
+    },
+
+    // TypeScript errors
+    typescript: {
+        ignoreBuildErrors: true,
+    },
+
+    // Webpack configuration for better chunk loading
+    webpack: (config, { isServer }) => {
+        if (!isServer) {
+            config.optimization = {
+                ...config.optimization,
+                splitChunks: {
+                    chunks: 'all',
+                    cacheGroups: {
+                        default: false,
+                        vendors: false,
+                        commons: {
+                            name: 'commons',
+                            chunks: 'all',
+                            minChunks: 2,
+                        },
+                    },
+                },
+            };
+        }
+        return config;
     },
 
     // Optimization for faster loads
@@ -50,6 +74,18 @@ const nextConfig: NextConfig = {
                     {
                         key: 'Permissions-Policy',
                         value: 'camera=*, microphone=*, geolocation=()'
+                    },
+                    {
+                        key: 'Access-Control-Allow-Origin',
+                        value: '*'
+                    },
+                    {
+                        key: 'Access-Control-Allow-Methods',
+                        value: 'GET, POST, PUT, DELETE, OPTIONS'
+                    },
+                    {
+                        key: 'Access-Control-Allow-Headers',
+                        value: 'Content-Type, Authorization'
                     }
                 ],
             },

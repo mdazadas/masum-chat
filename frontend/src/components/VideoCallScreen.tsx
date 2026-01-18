@@ -107,12 +107,12 @@ export default function VideoCallScreen({
                 )}
 
                 {/* Local Video (Picture in Picture) */}
-                <motion.div
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="absolute top-6 right-6 w-32 h-48 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-zinc-800"
-                >
-                    {localStream && !isVideoOff ? (
+                {localStream && localStream.getVideoTracks().length > 0 && !isVideoOff && (
+                    <motion.div
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="absolute top-6 right-6 w-32 h-48 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-zinc-800"
+                    >
                         <video
                             ref={localVideoRef}
                             autoPlay
@@ -120,12 +120,8 @@ export default function VideoCallScreen({
                             muted
                             className="w-full h-full object-cover mirror"
                         />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-zinc-800">
-                            <VideoOff className="w-8 h-8 text-zinc-600" />
-                        </div>
-                    )}
-                </motion.div>
+                    </motion.div>
+                )}
             </div>
 
             {/* Call Controls */}

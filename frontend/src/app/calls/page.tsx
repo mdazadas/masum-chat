@@ -10,6 +10,7 @@ import BottomNav from '@/components/BottomNav';
 
 interface CallLog {
     id: string;
+    chat_id: string;
     caller_id: string;
     receiver_id: string;
     call_type: 'video' | 'audio';
@@ -51,6 +52,7 @@ export default function CallsPage() {
 
             const formattedCalls = callsData.map(call => ({
                 id: call.id,
+                chat_id: call.chat_id,
                 caller_id: call.caller_id,
                 receiver_id: call.receiver_id,
                 call_type: call.call_type,
@@ -192,20 +194,33 @@ export default function CallsPage() {
                                         {getCallStatus(call)}
                                     </div>
 
-                                    {/* Time */}
+                                    {/* Time and Actions */}
                                     <div className="flex items-center gap-3">
-                                        <span className="text-xs text-zinc-500 font-medium" suppressHydrationWarning>
-                                            {formatDate(call.started_at)}
-                                        </span>
+                                        <div className="text-right flex flex-col items-end">
+                                            <span className="text-xs text-zinc-500 font-medium whitespace-nowrap" suppressHydrationWarning>
+                                                {formatDate(call.started_at)}
+                                            </span>
 
-                                        {/* Delete Button */}
-                                        <motion.button
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={() => deleteCall(call.id)}
-                                            className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-500/10 rounded-full transition-all"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                        </motion.button>
+                                            <div className="flex items-center gap-1 mt-1">
+                                                {/* Call Back Button */}
+                                                <motion.button
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => router.push(`/chat/${call.chat_id}`)}
+                                                    className="p-1.5 hover:bg-zinc-800 rounded-lg transition-all text-accent"
+                                                >
+                                                    {call.call_type === 'video' ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                                                </motion.button>
+
+                                                {/* Delete Button */}
+                                                <motion.button
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => deleteCall(call.id)}
+                                                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/10 rounded-lg transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </motion.button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </motion.div>
                             );

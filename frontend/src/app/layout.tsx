@@ -31,7 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased bg-black text-white`}>
+      <body className={`${inter.className} antialiased bg-black text-white`} suppressHydrationWarning>
         <AuthProvider>
           <CallProvider>
             <div className="mobile-container overflow-hidden">

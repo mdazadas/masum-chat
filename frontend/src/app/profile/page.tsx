@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Loader2, Settings, User, Mail, AtSign, LogOut, Camera, Shield, Bell, HelpCircle } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
@@ -9,6 +10,7 @@ import { motion } from 'framer-motion';
 
 export default function ProfilePage() {
     const { user, profile, signOut, loading: authLoading } = useAuth();
+    const router = useRouter();
 
     if (authLoading) {
         return (
@@ -19,10 +21,17 @@ export default function ProfilePage() {
     }
 
     const menuItems = [
+        { icon: Settings, label: 'App Settings', color: 'text-zinc-400', path: '/settings' },
         { icon: User, label: 'Edit Profile', color: 'text-blue-400' },
-        { icon: Shield, label: 'Security & Privacy', color: 'text-green-400' },
+        { icon: Shield, label: 'Privacy & Security', color: 'text-green-400' },
         { icon: Bell, label: 'Notifications', color: 'text-purple-400' },
         { icon: HelpCircle, label: 'Help Center', color: 'text-amber-400' },
+    ];
+
+    const stats = [
+        { label: 'Messages', value: '1.2k' },
+        { label: 'Calls', value: '45' },
+        { label: 'Member', value: new Date(user?.created_at || '').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) },
     ];
 
     return (
@@ -46,18 +55,28 @@ export default function ProfilePage() {
                     <h1 className="text-2xl font-bold tracking-tight text-white">{profile?.display_name}</h1>
                     <p className="text-zinc-500 font-medium">@{profile?.username}</p>
                 </div>
+
+                {/* Stats Bar */}
+                <div className="flex items-center gap-8 py-4">
+                    {stats.map((stat) => (
+                        <div key={stat.label} className="text-center">
+                            <p className="text-lg font-bold text-white">{stat.value}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{stat.label}</p>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Info Cards */}
             <div className="px-6 space-y-6">
-                <div className="glass p-6 rounded-3xl space-y-4 border-white/5">
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-6">Account Info</h2>
+                <div className="glass p-6 rounded-3xl space-y-4 border-white/5 shadow-xl">
+                    <h2 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-6">Account Info</h2>
                     <div className="flex items-center gap-4 group">
                         <div className="p-3 rounded-2xl bg-zinc-900 group-hover:bg-zinc-800 transition-colors">
                             <Mail className="w-5 h-5 text-zinc-400" />
                         </div>
                         <div className="flex-1 border-b border-zinc-800/50 pb-4">
-                            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-1">Email</p>
+                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Email</p>
                             <p className="text-zinc-200 font-medium">{user?.email}</p>
                         </div>
                     </div>
@@ -66,17 +85,18 @@ export default function ProfilePage() {
                             <AtSign className="w-5 h-5 text-zinc-400" />
                         </div>
                         <div className="flex-1 pb-2">
-                            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mb-1">Username</p>
+                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Username</p>
                             <p className="text-zinc-200 font-medium">@{profile?.username}</p>
                         </div>
                     </div>
                 </div>
 
                 {/* Menu Items */}
-                <div className="glass rounded-3xl overflow-hidden border-white/5">
+                <div className="glass rounded-3xl overflow-hidden border-white/5 shadow-xl">
                     {menuItems.map((item, i) => (
                         <button
                             key={item.label}
+                            onClick={() => item.path && router.push(item.path)}
                             className={`w-full p-5 flex items-center justify-between hover:bg-white/5 transition-all text-left ${i !== menuItems.length - 1 ? 'border-b border-white/5' : ''}`}
                         >
                             <div className="flex items-center gap-4">
@@ -90,10 +110,10 @@ export default function ProfilePage() {
 
                 <button
                     onClick={() => signOut()}
-                    className="w-full glass p-5 rounded-3xl flex items-center justify-center gap-3 text-red-500 font-bold hover:bg-red-500/10 border-red-500/10 transition-all hover:border-red-500/30"
+                    className="w-full glass p-5 rounded-3xl flex items-center justify-center gap-3 text-red-500 font-bold hover:bg-red-500/10 border-red-500/10 transition-all hover:border-red-500/30 mb-4"
                 >
                     <LogOut className="w-5 h-5" />
-                    Sign Out from All Devices
+                    Sign Out Securely
                 </button>
             </div>
 

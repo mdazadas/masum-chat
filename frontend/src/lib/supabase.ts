@@ -21,9 +21,10 @@ export const getSupabase = (): SupabaseClient => {
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
             autoRefreshToken: true,
-            persistSession: true,
+            persistSession: true, // Still set to true so it stays for current tab
             detectSessionInUrl: true,
             flowType: 'pkce',
+            storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
         },
         global: {
             headers: {

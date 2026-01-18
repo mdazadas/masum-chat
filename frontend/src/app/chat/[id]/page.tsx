@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { Loader2, ArrowLeft, Send, Phone, Video, Info, Check, CheckCheck, Trash2, MoreVertical, Trash } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, Phone, Video, Info, Check, CheckCheck, Trash2, MoreVertical, Trash, Plus, Mic, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVideoCall } from '@/hooks/useVideoCall';
 import { useMobileViewport } from '@/hooks/useMobileViewport';
 import VideoCallScreen from '@/components/VideoCallScreen';
 import IncomingCallModal from '@/components/IncomingCallModal';
+import PermissionModal from '@/components/PermissionModal';
+import { useNotifications } from '@/hooks/useNotifications';
 
 export default function ChatScreen() {
     const { id: chatId } = useParams();
@@ -25,8 +27,12 @@ export default function ChatScreen() {
     const [showMenu, setShowMenu] = useState(false);
     const [showScrollBottom, setShowScrollBottom] = useState(false);
     const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [pendingCallType, setPendingCallType] = useState<'video' | 'audio' | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const { showNotification } = useNotifications();
 
     // Video call hook
     const { viewportHeight, isKeyboardOpen } = useMobileViewport();
@@ -69,6 +75,11 @@ export default function ChatScreen() {
                         scrollToBottom();
                         if (payload.new.sender_id !== user!.id) {
                             markMessagesAsRead();
+                            // Trigger notification/sound
+                            showNotification(
+                                recipient?.display_name || recipient?.username || 'New Message',
+                                payload.new.content
+                            );
                         }
                     }
                 )
@@ -177,7 +188,8 @@ export default function ChatScreen() {
                     .single();
 
                 if (signals) {
-                    await answerCall(autoAnswerId, signals.signal_data);
+                    const { data: callData } = await supabase.from('calls').select('call_type').eq('id', autoAnswerId).single();
+                    await answerCall(autoAnswerId, signals.signal_data, callData?.call_type || 'video');
                 }
             }
         };
@@ -213,7 +225,14 @@ export default function ChatScreen() {
                 status: 'sent'
             });
 
-        if (error) console.error(error);
+        if (error) {
+            console.error(error);
+        } else {
+            // Keep keyboard open after sending by re-focusing immediately
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
+        }
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -332,9 +351,21 @@ export default function ChatScreen() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button className="p-2 text-zinc-400 hover:text-white transition-colors"><Phone className="w-5 h-5" /></button>
                     <button
-                        onClick={startCall}
+                        onClick={() => {
+                            setPendingCallType('audio');
+                            setShowPermissionModal(true);
+                        }}
+                        disabled={callStatus !== 'idle'}
+                        className="p-2 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+                    >
+                        <Phone className="w-5 h-5" />
+                    </button>
+                    <button
+                        onClick={() => {
+                            setPendingCallType('video');
+                            setShowPermissionModal(true);
+                        }}
                         disabled={callStatus !== 'idle'}
                         className="p-2 text-zinc-400 hover:text-accent transition-colors disabled:opacity-50"
                     >
@@ -443,24 +474,41 @@ export default function ChatScreen() {
             </div>
 
             {/* Input Area */}
-            <div className={`p-4 glass border-t border-white/5 backdrop-blur-2xl transition-all ${isKeyboardOpen ? 'pb-4' : 'safe-bottom'}`}>
-                <form onSubmit={sendMessage} className="flex items-center gap-2">
-                    <div className="flex-1 relative">
+            <div
+                className={`p-3 glass border-t border-white/5 backdrop-blur-3xl transition-all duration-300 ${isKeyboardOpen ? 'pb-2' : 'pb-8 safe-bottom'}`}
+            >
+                <form onSubmit={sendMessage} className="flex items-end gap-2 max-w-[600px] mx-auto">
+                    <div className="flex-1 flex items-center bg-zinc-900/80 border border-white/5 rounded-[24px] px-3 py-1.5 shadow-2xl backdrop-blur-md">
+                        <button type="button" className="p-2 text-zinc-500 hover:text-accent transition-colors">
+                            <Plus className="w-6 h-6" />
+                        </button>
+
                         <input
+                            ref={inputRef}
                             type="text"
                             placeholder="Message..."
                             value={inputText}
                             onChange={handleInputChange}
-                            className="w-full bg-zinc-900 border border-zinc-700/50 rounded-2xl py-3 px-5 text-[15px] text-white focus:outline-none focus:border-accent transition-all placeholder:text-zinc-600 shadow-inner"
+                            className="flex-1 bg-transparent border-none py-2.5 px-2 text-[16px] text-white focus:outline-none placeholder:text-zinc-600 min-h-[44px]"
                         />
+
+                        <button type="button" className="p-2 text-zinc-500 hover:text-accent transition-colors">
+                            <ImageIcon className="w-5 h-5" />
+                        </button>
                     </div>
-                    <button
+
+                    <motion.button
+                        whileTap={{ scale: 0.85 }}
                         type="submit"
                         disabled={!inputText.trim()}
-                        className="w-14 h-14 bg-accent hover:bg-accent/90 disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-full flex items-center justify-center transition-all shadow-lg active:scale-90"
+                        onPointerDown={(e) => e.preventDefault()} // CRITICAL: Prevents input blur on click
+                        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-xl ${inputText.trim()
+                            ? 'bg-accent text-white'
+                            : 'bg-zinc-800 text-zinc-500'
+                            }`}
                     >
-                        <Send className="w-6 h-6 ml-1" />
-                    </button>
+                        <Send className="w-5 h-5 ml-0.5" />
+                    </motion.button>
                 </form>
             </div>
 
@@ -480,7 +528,9 @@ export default function ChatScreen() {
                                 .maybeSingle();
 
                             if (signals) {
-                                await answerCall(currentCallId!, signals.signal_data);
+                                // Also fetch call type
+                                const { data: callData } = await supabase.from('calls').select('call_type').eq('id', currentCallId).single();
+                                await answerCall(currentCallId!, signals.signal_data, callData?.call_type || 'video');
                             } else {
                                 console.error('No offer signal found for call:', currentCallId, error);
                                 // Fallback: wait a bit and try again or end call
@@ -504,6 +554,24 @@ export default function ChatScreen() {
                         onToggleMute={toggleMute}
                         onToggleVideo={toggleVideo}
                         onSwitchCamera={switchCamera}
+                    />
+                )}
+
+                {/* Permission Modal */}
+                {showPermissionModal && pendingCallType && (
+                    <PermissionModal
+                        type={pendingCallType}
+                        onAllow={() => {
+                            setShowPermissionModal(false);
+                            if (pendingCallType) {
+                                startCall(pendingCallType);
+                            }
+                            setPendingCallType(null);
+                        }}
+                        onDeny={() => {
+                            setShowPermissionModal(false);
+                            setPendingCallType(null);
+                        }}
                     />
                 )}
             </AnimatePresence>
