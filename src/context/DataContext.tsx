@@ -40,6 +40,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Session Restoration — Sequential priority
     useEffect(() => {
         const restoreSession = async () => {
+            // Check if there is a hint of a session to avoid unnecessary 401 refresh calls
+            const hasAuth = localStorage.getItem('pocketbase_auth');
+            if (!hasAuth) {
+                console.log('DataContext: No pocketbase_auth found, skipping restoration.');
+                setAuthRestored(true);
+                return;
+            }
+
             console.log('DataContext: Restoring session...');
             try {
                 // This hydrates the SDK's internal authStore from storage (localStorage)
