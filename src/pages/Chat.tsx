@@ -633,14 +633,30 @@ const Chat = () => {
     }, [messages, username, cacheMessages]);
 
     useEffect(() => {
-        const sendMediaDirectly = async (url: string, mediaType: 'image' | 'video') => {
+        const uploadAndSendMedia = useCallback(async (
+            file: Blob | string,
+            type: 'image' | 'video' | 'audio',
+            duration?: string
+        ) => {
+            if (!userId || !receiverId) {
+                showToast('User session or receiver not found', 'error');
+                return;
+            }
+
             const msgId = Date.now();
-            const label = mediaType === 'video' ? 'Video' : 'Photo';
+            const label = type.charAt(0).toUpperCase() + type.slice(1);
+
+            // 1. Create local preview URL if needed
+            let previewUrl = typeof file === 'string' ? file : URL.createObjectURL(file);
+
+            // 2. Add optimistic message
             const newMsg: Message = {
                 id: msgId,
-                text: `Sent a ${label.toLowerCase()} `,
-                image: url,
-                mediaType,
+                text: type === 'audio' ? '' : `Sent a ${type}`,
+                image: type === 'audio' ? null : previewUrl,
+                audio: type === 'audio' ? previewUrl : null,
+                audioDuration: duration,
+                mediaType: type,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 sender: 'me',
                 status: 'sent',
@@ -649,28 +665,33 @@ const Chat = () => {
             };
             setMessages(prev => [...prev, newMsg]);
 
-            // Upload to InsForge storage
-            if (userId && receiverId) {
-                const bucket = mediaType === 'video' ? BUCKETS.chatMedia : BUCKETS.chatImages;
-                const ext = mediaType === 'video' ? 'mp4' : 'jpg';
-                const path = `${userId}/${Date.now()}.${ext}`;
-
-                // Convert base64 data URL to Blob
+            try {
+                // 3. Convert string (base64/blob URL) to actual Blob if necessary
                 let uploadBlob: Blob;
-                if (url.startsWith('data:')) {
-                    const res = await fetch(url);
+                if (typeof file === 'string') {
+                    const res = await fetch(file);
                     uploadBlob = await res.blob();
                 } else {
-                    const res = await fetch(url);
-                    uploadBlob = await res.blob();
+                    uploadBlob = file;
                 }
 
+                // 4. Determine bucket and path
+                const bucket = type === 'video' ? BUCKETS.chatMedia :
+                    (type === 'audio' ? BUCKETS.chatMedia : BUCKETS.chatImages);
+                const ext = type === 'video' ? 'mp4' : (type === 'audio' ? 'webm' : 'jpg');
+                const path = `${userId}/${Date.now()}.${ext}`;
+
+                // 5. Upload to InsForge
                 const { data: uploadData, error: uploadError } = await insforge.storage
                     .from(bucket)
                     .upload(path, uploadBlob);
 
-                const imageUrl = uploadData?.url || url;
+                if (uploadError) throw uploadError;
+                if (!uploadData?.url) throw new Error('Upload failed');
 
+                const mediaUrl = uploadData.url;
+
+                // 6. Save to Database
                 const insertPayload: any = {
                     sender_id: userId,
                     receiver_id: receiverId,
@@ -678,47 +699,40 @@ const Chat = () => {
                     is_seen: false,
                 };
 
-                if ((mediaType as string) === 'video') insertPayload.video_url = imageUrl;
-                else if ((mediaType as string) === 'audio') insertPayload.audio_url = imageUrl;
-                else insertPayload.image_url = imageUrl;
+                if (type === 'video') insertPayload.video_url = mediaUrl;
+                else if (type === 'audio') insertPayload.audio_url = mediaUrl;
+                else insertPayload.image_url = mediaUrl;
 
-                const { error: msgError } = await insforge.database
+                const { error: dbError } = await insforge.database
                     .from('messages')
-                    .insert(insertPayload)
-                    .select();
+                    .insert(insertPayload);
 
-                if (uploadError || msgError) {
-                    showToast('Failed to upload media', 'error');
-                    setMessages(prev => prev.filter(m => m.id !== msgId));
-                    return;
-                }
+                if (dbError) throw dbError;
 
-                // Update the message URL to the real storage URL
+                // 7. Update UI with final URL
                 setMessages(prev => prev.map(m =>
-                    m.id === msgId ? { ...m, image: imageUrl, uploading: false, uploadProgress: 100 } : m
+                    m.id === msgId ? {
+                        ...m,
+                        image: type === 'audio' ? null : mediaUrl,
+                        audio: type === 'audio' ? mediaUrl : null,
+                        uploading: false,
+                        uploadProgress: 100
+                    } : m
                 ));
+
                 showToast(`${label} sent`, 'success');
-            } else {
-                // Fallback if not authed: mock progress
-                let progress = 0;
-                const interval = setInterval(() => {
-                    progress += Math.floor(Math.random() * 20) + 10;
-                    if (progress >= 100) {
-                        clearInterval(interval);
-                        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, uploading: false, uploadProgress: 100 } : m));
-                        showToast(`${label} sent`, 'success');
-                    } else {
-                        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, uploadProgress: progress } : m));
-                    }
-                }, 200);
+            } catch (err) {
+                console.error(`Error sending ${type}:`, err);
+                showToast(`Failed to send ${type}`, 'error');
+                setMessages(prev => prev.filter(m => m.id !== msgId));
             }
-        }; // end sendMediaDirectly
+        }, [userId, receiverId, showToast]);
 
         const checkPendingMedia = () => {
             const media = getPendingMedia();
             if (!media) return;
             clearPendingMedia();
-            sendMediaDirectly(media.url, media.type === 'video' ? 'video' : 'image');
+            uploadAndSendMedia(media.url, media.type === 'video' ? 'video' : 'image');
         };
 
         let rafId = 0;
@@ -754,7 +768,7 @@ const Chat = () => {
             });
         };
 
-        sendMediaDirectlyRef.current = sendMediaDirectly;
+        sendMediaDirectlyRef.current = uploadAndSendMedia;
         checkPendingMedia();
 
         if (window.visualViewport) {
@@ -824,24 +838,13 @@ const Chat = () => {
                 }
             };
 
-            recorder.onstop = () => {
+            recorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                const audioUrl = URL.createObjectURL(audioBlob);
 
                 if (shouldSendAudio.current) {
                     const duration = formatTime(recordingTime);
-                    const newMsg: Message = {
-                        id: Date.now(),
-                        text: "", // No text for pure voice messages
-                        audio: audioUrl,
-                        audioDuration: duration,
-                        mediaType: "audio",
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        sender: "me",
-                        status: "sent"
-                    };
-                    setMessages(prev => [...prev, newMsg]);
-                    showToast('Voice message sent', 'success');
+                    // Unified flow handles storage + DB
+                    await uploadAndSendMedia(audioBlob, 'audio', duration);
                 }
 
                 // CRITICAL: Cleanup stream tracks to turn off the mic indicator
@@ -903,27 +906,43 @@ const Chat = () => {
 
     const handleSendMessage = async (e: any) => {
         if (e) e.preventDefault();
-        if (!inputText.trim() && !capturedImage) return;
+
+        // If there's a captured image from camera, use the unified media flow
+        if (capturedImage) {
+            const finalImage = capturedImage;
+            const finalText = inputText;
+            setCapturedImage(null);
+            setInputText('');
+            // Upload to storage and send
+            await uploadAndSendMedia(finalImage, 'image');
+            // If there was text too, we currently send it as a separate or combined message
+            // Most chat apps send text + image as one. For now, let's just send the image.
+            // If text is needed, we could extend uploadAndSendMedia to accept optional text.
+            return;
+        }
+
+        if (!inputText.trim()) return;
         if (!userId || !receiverId) return;
 
         const tempId = Date.now() + Math.floor(Math.random() * 1000);
+        const textToSend = inputText;
+        const currentReply = replyingTo;
+
         const newMsg: Message = {
             id: tempId,
-            text: inputText || 'sent an image',
-            image: capturedImage,
+            text: textToSend,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             sender: 'me',
             status: 'sent',
-            replyTo: replyingTo ? {
-                id: replyingTo.id,
-                text: replyingTo.text,
-                username: replyingTo.sender === 'me' ? 'me' : username!
+            replyTo: currentReply ? {
+                id: currentReply.id,
+                text: currentReply.text,
+                username: currentReply.sender === 'me' ? 'me' : username!
             } : null
         };
 
         setMessages(prev => [...prev, newMsg]);
         setInputText('');
-        setCapturedImage(null);
         setReplyingTo(null);
         setIsTyping(false);
 
@@ -940,13 +959,13 @@ const Chat = () => {
             .insert({
                 sender_id: userId,
                 receiver_id: receiverId,
-                text: inputText || null,
-                image_url: capturedImage || null,
+                text: textToSend,
+                image_url: null,
                 is_seen: false,
-            })
-            .select();
+            });
 
         if (error) {
+            console.error('handleSendMessage error:', error);
             showToast('Failed to send message', 'error');
             setMessages(prev => prev.filter(m => m.id !== tempId));
         }
