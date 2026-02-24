@@ -15,7 +15,7 @@ const Home = () => {
     const userId = useCurrentUserId();
     const {
         contacts, setContacts,
-        profileData, refreshContacts, initialized
+        profileData, initialized
     } = useData();
 
 
