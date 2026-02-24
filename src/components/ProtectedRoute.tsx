@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+import { insforge } from '../lib/insforge';
 
 interface ProtectedRouteProps {
     children: ReactNode;
@@ -8,20 +9,20 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     const navigate = useNavigate();
-    const { initialized, authRestored } = useData();
-    const tabSession = localStorage.getItem('masum_tab_session') || sessionStorage.getItem('masum_tab_session');
+    const { authRestored, userId } = useData();
+    const isLoggedIn = !!userId;
 
     useEffect(() => {
-        if (authRestored && !tabSession) {
+        if (authRestored && !isLoggedIn) {
             navigate('/', { replace: true });
         }
-    }, [authRestored, tabSession, navigate]);
+    }, [authRestored, isLoggedIn, navigate]);
 
-    if (!authRestored || (!tabSession && !authRestored)) {
+    if (!authRestored) {
         return <div style={{ height: '100dvh', backgroundColor: 'var(--surface-color)' }} />;
     }
 
-    if (!tabSession) {
+    if (!isLoggedIn) {
         return null;
     }
 

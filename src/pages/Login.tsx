@@ -37,14 +37,7 @@ const Login = () => {
       } else if (data) {
         showToast('Welcome back to Masum Chat!', 'success');
 
-        // Persist session
-        localStorage.setItem('masum_tab_session', 'active');
-        localStorage.setItem('masum_user_id', data.user.id);
-
-        // Ensure SDK state is fully updated before we signal or navigate
-        await new Promise(r => setTimeout(r, 100));
-
-        // Notify DataContext to re-read userId BEFORE navigating
+        // Notify DataContext of auth change
         window.dispatchEvent(new Event('masum-auth-change'));
         // SPA navigate — keeps SDK in-memory session alive (DO NOT use location.replace here)
         navigate('/home', { replace: true });

@@ -1,14 +1,23 @@
 import { createClient } from '@insforge/sdk';
 
-const BASE_URL = import.meta.env.VITE_INSFORGE_BASE_URL as string;
+const BASE_URL = (import.meta.env.VITE_PB_URL || import.meta.env.VITE_INSFORGE_BASE_URL) as string;
 
-export const insforge = createClient({
-    baseUrl: BASE_URL,
-    anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY as string,
-    storage: localStorage, // Browser localStorage for persistent sessions
-    persistSession: true,
-    autoRefreshToken: true // Automatically handle JWT refresh
-});
+// Prevent multiple initializations in HMR / production
+let instance: ReturnType<typeof createClient> | null = null;
+
+export const insforge = (() => {
+    if (!instance) {
+        console.log('Initializing Insforge client singleton with URL:', BASE_URL);
+        instance = createClient({
+            baseUrl: BASE_URL,
+            anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY as string,
+            storage: localStorage, // Official persistence mechanism
+            persistSession: true,
+            autoRefreshToken: true
+        });
+    }
+    return instance;
+})();
 
 // Storage bucket names
 export const BUCKETS = {

@@ -15,6 +15,8 @@ interface DataContextType {
     refreshSettings: () => Promise<any>;
     loading: boolean;
     initialized: boolean;
+    authRestored: boolean;
+    userId: string | null;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -34,7 +36,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Make userId reactive — also checks localStorage backup in case SDK cleared sessionStorage on 401
     const [authRestored, setAuthRestored] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
-    const [tabSession, setTabSession] = useState<string | null>(null);
 
     // 1. Session Restoration — Sequential priority
     useEffect(() => {
@@ -47,10 +48,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (data?.session?.user) {
                     console.log('DataContext: Session restored for:', data.session.user.id);
                     setUserId(data.session.user.id);
-                    setTabSession('active');
-                    // Update persistence flags if missing
-                    if (!localStorage.getItem('masum_tab_session')) localStorage.setItem('masum_tab_session', 'active');
-                    if (!localStorage.getItem('masum_user_id')) localStorage.setItem('masum_user_id', data.session.user.id);
                 } else {
                     console.log('DataContext: No active session found.');
                 }
@@ -67,9 +64,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 2. Auth Change listener
     useEffect(() => {
         const handleAuthChange = () => {
-            const sdkUser = insforge.auth.user;
-            setUserId(sdkUser?.id || null);
-            setTabSession(localStorage.getItem('masum_tab_session') || sessionStorage.getItem('masum_tab_session'));
+            setUserId(insforge.auth.user?.id || null);
         };
         window.addEventListener('masum-auth-change', handleAuthChange);
         return () => window.removeEventListener('masum-auth-change', handleAuthChange);
@@ -106,7 +101,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => { sessionStorage.setItem('masum_messages_cache', JSON.stringify(messagesCache)); }, [messagesCache]);
 
     const refreshProfile = async () => {
-        if (!userId || !tabSession) return;
+        if (!userId) return;
         try {
             const { data } = await insforge.database.from('profiles').select('*').eq('id', userId).single();
             if (data) { setProfileData(data); return data; }
@@ -115,7 +110,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const refreshSettings = async () => {
-        if (!userId || !tabSession) return;
+        if (!userId) return;
         try {
             const { data } = await insforge.database.from('user_settings').select('*').eq('user_id', userId).single();
             if (data) { setSettings(data); return data; }
@@ -124,7 +119,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const refreshContacts = async () => {
-        if (!userId || !tabSession) return;
+        if (!userId) return;
         try {
             const { data: dbContacts } = await insforge.database
                 .from('contacts')
@@ -311,11 +306,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             insforge.realtime.off('UPDATE_message', handleUpdateMessage);
             insforge.realtime.unsubscribe('messages');
         };
-    }, [userId, tabSession, initialized]);
+    }, [userId, initialized]);
 
     // Initial background fetch — run once on mount (GATED by authRestored)
     useEffect(() => {
-        if (!authRestored || !userId || !tabSession || initialized) return;
+        if (!authRestored || !userId || initialized) return;
 
         const initializeData = async () => {
             console.log('DataContext: Starting initialization for user:', userId);
@@ -350,7 +345,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         initializeData();
-    }, [userId, tabSession, initialized]);
+    }, [userId, initialized]);
 
     return (
         <DataContext.Provider value={{
@@ -359,7 +354,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             settings, setSettings,
             messagesCache, cacheMessages,
             refreshContacts, refreshProfile, refreshSettings,
-            loading, initialized
+            loading, initialized, authRestored, userId
         }}>
             {children}
         </DataContext.Provider>
