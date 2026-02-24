@@ -16,8 +16,8 @@ const Login = () => {
 
   // Auto-redirect if already logged in (check both SDK and manual ID)
   useEffect(() => {
-    const manualUserId = sessionStorage.getItem('masum_user_id');
-    const hasTabSession = sessionStorage.getItem('masum_tab_session');
+    const manualUserId = localStorage.getItem('masum_user_id');
+    const hasTabSession = localStorage.getItem('masum_tab_session') === 'active';
 
     if ((isLoaded && user) || (manualUserId && hasTabSession)) {
       navigate('/home', { replace: true });
@@ -37,11 +37,9 @@ const Login = () => {
       } else if (data) {
         showToast('Welcome back to Masum Chat!', 'success');
 
-        // Pin session to this tab
-        sessionStorage.setItem('masum_tab_session', 'active');
-        sessionStorage.setItem('masum_user_id', data.user.id);
-        // Backup userId to localStorage — safety net if sessionStorage gets wiped
-        localStorage.setItem('masum_user_id_backup', data.user.id);
+        // Persist session
+        localStorage.setItem('masum_tab_session', 'active');
+        localStorage.setItem('masum_user_id', data.user.id);
 
         // Ensure email is always synced to profiles
         if (data.user?.email) {

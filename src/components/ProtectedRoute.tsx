@@ -14,7 +14,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     const navigate = useNavigate();
-    const tabSession = sessionStorage.getItem('masum_tab_session');
+    const tabSession = localStorage.getItem('masum_tab_session') || sessionStorage.getItem('masum_tab_session');
 
     useEffect(() => {
         if (!tabSession) {

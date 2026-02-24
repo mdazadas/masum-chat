@@ -1,21 +1,20 @@
+import { insforge } from '../lib/insforge';
+
 /**
- * Custom hook to get the current user's ID without relying on the SDK's useUser().
- *
- * The InsForge SDK's useUser() hook returns null in Incognito mode because the
- * InsforgeProvider makes a /auth/refresh call that returns 401 (no cross-origin
- * httpOnly cookie), which wipes the SDK's in-memory user state.
- *
- * Instead, we read from our own sessionStorage key 'masum_user_id', which is
- * set immediately after a successful signInWithPassword call and is not affected
- * by the SDK's refresh behavior.
+ * Custom hook to get the current user's ID.
+ * Prioritizes the SDK's in-memory state, falling back to localStorage (SDK's persistent store).
  */
 export const useCurrentUserId = (): string | null => {
-    return sessionStorage.getItem('masum_user_id');
+    // Check SDK in-memory first
+    if (insforge.auth.user?.id) return insforge.auth.user.id;
+    // Fallback to localStorage (where SDK persists the session)
+    return localStorage.getItem('masum_user_id');
 };
 
 /**
- * Returns true if the user is currently logged in (has an active tab session).
+ * Returns true if the user is currently logged in.
  */
 export const useIsLoggedIn = (): boolean => {
-    return sessionStorage.getItem('masum_tab_session') === 'active';
+    // User is logged in if SDK has a user OR we have a persistent tab session
+    return !!insforge.auth.user || localStorage.getItem('masum_tab_session') === 'active';
 };

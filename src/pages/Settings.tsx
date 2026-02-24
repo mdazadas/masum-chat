@@ -72,7 +72,9 @@ const Settings = () => {
             // Wait a bit for feedback
             setTimeout(async () => {
                 await insforge.auth.signOut();
-                navigate('/');
+                localStorage.clear();
+                sessionStorage.clear();
+                window.location.replace('/');
             }, 3000);
         } catch (err) {
             console.error("Delete account error:", err);
