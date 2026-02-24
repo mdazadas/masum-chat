@@ -553,7 +553,8 @@ const Chat = () => {
                             .update({ is_seen: true })
                             .eq('sender_id', pid)
                             .eq('receiver_id', userId)
-                            .eq('is_seen', false),
+                            .eq('is_seen', false)
+                            .catch(err => console.warn('Silent failure marking messages as seen:', err)),
 
                         // Ensure contact entry exists (Background task)
                         insforge.database
@@ -562,6 +563,7 @@ const Chat = () => {
                                 user_id: userId,
                                 contact_id: pid
                             }, { onConflict: 'user_id,contact_id' })
+                            .catch(err => console.warn('Silent failure upserting contact:', err))
                     ]);
 
                     const dbMsgs = msgRes.data;
