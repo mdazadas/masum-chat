@@ -14,7 +14,7 @@ const MyProfile = () => {
     const navigate = useNavigate();
     const userId = useCurrentUserId();
     const { showToast } = useToast();
-    const { profileData: globalProfile, refreshProfile } = useData();
+    const { profileData: globalProfile, setProfileData, refreshProfile } = useData();
     const [editingField, setEditingField] = useState<'name' | 'about' | null>(null);
     const [showPhotoSheet, setShowPhotoSheet] = useState(false);
     const [showPhotoModal, setShowPhotoModal] = useState(false);
