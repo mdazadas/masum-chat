@@ -41,17 +41,10 @@ const Login = () => {
         localStorage.setItem('masum_tab_session', 'active');
         localStorage.setItem('masum_user_id', data.user.id);
 
-        // Ensure email is always synced to profiles
-        if (data.user?.email) {
-          insforge.database
-            .from('profiles')
-            .update({ email: data.user.email })
-            .eq('id', data.user.id)
-            .is('email', null)
-            .then(() => { });
-        }
+        // Ensure SDK state is fully updated before we signal or navigate
+        await new Promise(r => setTimeout(r, 100));
 
-        // Notify DataContext to re-read userId BEFORE navigating (SDK session still hot in memory)
+        // Notify DataContext to re-read userId BEFORE navigating
         window.dispatchEvent(new Event('masum-auth-change'));
         // SPA navigate — keeps SDK in-memory session alive (DO NOT use location.replace here)
         navigate('/home', { replace: true });

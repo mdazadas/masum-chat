@@ -32,47 +32,48 @@ const formatTime = (dateStr: string): string => {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // Make userId reactive — also checks localStorage backup in case SDK cleared sessionStorage on 401
-    const [userId, setUserId] = useState<string | null>(() => {
-        // First check SDK in-memory (unlikely on mount but good practice)
-        if (insforge.auth.user?.id) return insforge.auth.user.id;
-        // Fallback to localStorage (SDK storage)
-        const saved = localStorage.getItem('masum_user_id');
-        return saved || null;
-    });
-    const [tabSession, setTabSession] = useState<string | null>(() => localStorage.getItem('masum_tab_session') || sessionStorage.getItem('masum_tab_session'));
+    const [authRestored, setAuthRestored] = useState(false);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [tabSession, setTabSession] = useState<string | null>(null);
 
-    // Listen for custom login/logout events dispatched by Login.tsx / Logout code
+    // 1. Session Restoration — Sequential priority
+    useEffect(() => {
+        const restoreSession = async () => {
+            console.log('DataContext: Restoring session...');
+            try {
+                // This hydrates the SDK's internal authStore from storage (localStorage)
+                const { data } = await insforge.auth.getCurrentSession();
+
+                if (data?.session?.user) {
+                    console.log('DataContext: Session restored for:', data.session.user.id);
+                    setUserId(data.session.user.id);
+                    setTabSession('active');
+                    // Update persistence flags if missing
+                    if (!localStorage.getItem('masum_tab_session')) localStorage.setItem('masum_tab_session', 'active');
+                    if (!localStorage.getItem('masum_user_id')) localStorage.setItem('masum_user_id', data.session.user.id);
+                } else {
+                    console.log('DataContext: No active session found.');
+                }
+            } catch (err) {
+                console.error('DataContext: Session restoration failed:', err);
+            } finally {
+                setAuthRestored(true);
+            }
+        };
+
+        restoreSession();
+    }, []);
+
+    // 2. Auth Change listener
     useEffect(() => {
         const handleAuthChange = () => {
-            const currentId = insforge.auth.user?.id || localStorage.getItem('masum_user_id');
-            setUserId(currentId || null);
+            const sdkUser = insforge.auth.user;
+            setUserId(sdkUser?.id || null);
             setTabSession(localStorage.getItem('masum_tab_session') || sessionStorage.getItem('masum_tab_session'));
         };
         window.addEventListener('masum-auth-change', handleAuthChange);
         return () => window.removeEventListener('masum-auth-change', handleAuthChange);
     }, []);
-
-    // Session Restoration — Crucial for PocketBase/JWT hydration
-    useEffect(() => {
-        const restoreSession = async () => {
-            try {
-                // This hydrates the SDK's internal authStore from storage (localStorage)
-                const { data } = await insforge.auth.getCurrentSession();
-                if (data?.session?.user?.id) {
-                    console.log('DataContext: Session restored for:', data.session.user.id);
-                    setUserId(data.session.user.id);
-                    localStorage.setItem('masum_tab_session', 'active');
-                    setTabSession('active');
-                }
-            } catch (err) {
-                console.error('DataContext: Session restoration failed:', err);
-            }
-        };
-
-        if (!userId) {
-            restoreSession();
-        }
-    }, [userId]);
 
     const [contacts, setContacts] = useState<any[]>(() => {
         const saved = sessionStorage.getItem('masum_contacts');
@@ -312,9 +313,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, [userId, tabSession, initialized]);
 
-    // Initial background fetch — run once on mount
+    // Initial background fetch — run once on mount (GATED by authRestored)
     useEffect(() => {
-        if (!userId || !tabSession || initialized) return;
+        if (!authRestored || !userId || !tabSession || initialized) return;
 
         const initializeData = async () => {
             console.log('DataContext: Starting initialization for user:', userId);
