@@ -316,17 +316,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             );
 
             try {
+                console.time('initialization');
                 await Promise.race([
                     Promise.all([
-                        refreshProfile(),
-                        refreshContacts(),
-                        refreshSettings()
+                        refreshProfile().then(d => { console.log('✓ Profile loaded'); return d; }),
+                        refreshContacts().then(d => { console.log('✓ Contacts loaded'); return d; }),
+                        refreshSettings().then(d => { console.log('✓ Settings loaded'); return d; })
                     ]),
                     timeout
                 ]);
+                console.timeEnd('initialization');
                 console.log('DataContext: Initialization complete.');
             } catch (err) {
-                console.warn('DataContext: Initialization ended:', (err as Error).message);
+                console.timeEnd('initialization');
+                console.warn('DataContext: Initialization ended prematurely:', (err as Error).message);
             } finally {
                 setInitialized(true);
                 setLoading(false);

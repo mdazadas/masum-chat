@@ -118,24 +118,51 @@ const MyProfile = () => {
 
     const handleRemovePhoto = async () => {
         if (!userId) return;
+        const currentPhotoUrl = globalProfile?.avatar_url;
         setShowRemoveConfirm(false);
         setShowPhotoSheet(false);
+
         // Optimistic update — update UI instantly before DB call
         if (globalProfile) {
             setProfileData({ ...globalProfile, avatar_url: null });
         }
         setLoading(true);
         try {
-            // Only update DB (skip auth.setProfile which hangs on null)
+            // 1. Delete actual file from storage if it's an InsForge URL
+            if (currentPhotoUrl && currentPhotoUrl.includes('ap-southeast.insforge.app/api/storage')) {
+                try {
+                    // Extract path: avatars/filename.ext
+                    const urlParts = currentPhotoUrl.split('/public/');
+                    if (urlParts.length > 1) {
+                        const filePath = urlParts[1];
+                        console.log('Deleting storage file:', filePath);
+                        await insforge.storage.from(BUCKETS.avatars).remove([filePath]);
+                    }
+                } catch (storageErr) {
+                    console.error('Storage deletion failed (non-blocking):', storageErr);
+                }
+            }
+
+            // 2. Update DB
             const { error } = await insforge.database
                 .from('profiles')
                 .update({ avatar_url: null })
                 .eq('id', userId);
+
             if (error) throw error;
+
+            // 3. Clear auth profile avatar too
+            await insforge.auth.setProfile({ avatar_url: null });
+
             await refreshProfile();
             showToast('Profile photo removed', 'info');
         } catch (err) {
+            console.error('handleRemovePhoto error:', err);
             showToast('Failed to remove photo', 'error');
+            // Revert optimistic update on error
+            if (globalProfile) {
+                setProfileData(globalProfile);
+            }
         } finally {
             setLoading(false);
         }
