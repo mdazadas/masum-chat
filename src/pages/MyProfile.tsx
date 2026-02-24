@@ -7,6 +7,7 @@ import { useCurrentUserId } from '../hooks/useCurrentUser';
 import BottomNav from '../components/BottomNav';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { useData } from '../context/DataContext';
+import Avatar from '../components/Avatar';
 import BlurImage from '../components/BlurImage';
 
 const MyProfile = () => {
@@ -119,14 +120,18 @@ const MyProfile = () => {
         if (!userId) return;
         setShowRemoveConfirm(false);
         setShowPhotoSheet(false);
+        // Optimistic update — update UI instantly before DB call
+        if (globalProfile) {
+            setProfileData({ ...globalProfile, avatar_url: null });
+        }
         setLoading(true);
         try {
-            await insforge.auth.setProfile({ avatar_url: null });
-            await insforge.database
+            // Only update DB (skip auth.setProfile which hangs on null)
+            const { error } = await insforge.database
                 .from('profiles')
                 .update({ avatar_url: null })
                 .eq('id', userId);
-
+            if (error) throw error;
             await refreshProfile();
             showToast('Profile photo removed', 'info');
         } catch (err) {
@@ -169,10 +174,11 @@ const MyProfile = () => {
                         onClick={() => setShowPhotoSheet(true)}
                         style={{ position: 'relative', borderRadius: '50%', cursor: 'pointer' }}
                     >
-                        <BlurImage
+                        <Avatar
                             src={globalProfile?.avatar_url}
-                            alt={globalProfile?.name || userEmail || 'User'}
-                            style={{ width: '160px', height: '160px', borderRadius: '50%' }}
+                            name={globalProfile?.name || userEmail || 'User'}
+                            size={160}
+                            style={{ border: '3px solid var(--border-color)', flexShrink: 0 }}
                         />
                         <div className="avatar-change-overlay">
                             {loading ? <Loader2 className="animate-spin" size={22} /> : <Camera size={22} />}
@@ -341,10 +347,11 @@ const MyProfile = () => {
 
                         {/* Preview Avatar */}
                         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                            <BlurImage
+                            <Avatar
                                 src={globalProfile?.avatar_url}
-                                alt={globalProfile?.name || 'User'}
-                                style={{ width: '88px', height: '88px', borderRadius: '50%', border: '3px solid var(--primary-color)' }}
+                                name={globalProfile?.name || 'User'}
+                                size={88}
+                                style={{ border: '3px solid var(--primary-color)', flexShrink: 0 }}
                             />
                         </div>
 
