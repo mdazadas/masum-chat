@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useNavigate } from 'react-router-dom';
 import { Phone, Video, X, PhoneCall } from 'lucide-react';
 import { insforge } from '../lib/insforge';
+import { showMessageNotification } from '../hooks/useNotifications';
 
 interface DataContextType {
     contacts: any[];
@@ -83,9 +84,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const contactsRef = useRef(contacts);
     const messagesCacheRef = useRef(messagesCache);
     const initializedRef = useRef(initialized);
+    const settingsRef = useRef(settings);
     useEffect(() => { contactsRef.current = contacts; }, [contacts]);
     useEffect(() => { messagesCacheRef.current = messagesCache; }, [messagesCache]);
     useEffect(() => { initializedRef.current = initialized; }, [initialized]);
+    useEffect(() => { settingsRef.current = settings; }, [settings]);
 
     // Restore Session
     const restoreSession = useCallback(async () => {
@@ -419,6 +422,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (isIncoming && payload.sender_id !== userId) {
                 playSound('receive');
+
+                // Browser push notification — only when not in that chat
+                const isChatOpen = activeChatIdRef.current === contactId?.toString();
+                if (!isChatOpen) {
+                    showMessageNotification(
+                        payload,
+                        contact,
+                        settingsRef.current
+                    );
+                }
             }
 
             // Update Cache

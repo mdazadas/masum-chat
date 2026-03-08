@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Check, RotateCcw, Loader2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Check, RotateCcw, Loader2, Bell, BellOff, Shield } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
 import LoadingOverlay from '../components/LoadingOverlay';
 import { useData } from '../context/DataContext';
 import FloatingActionSheet from '../components/FloatingActionSheet';
+import { requestNotificationPermission, getNotificationPermission } from '../hooks/useNotifications';
 
 const NotificationsSettings = () => {
     const navigate = useNavigate();
@@ -15,6 +16,23 @@ const NotificationsSettings = () => {
     const { settings, setSettings, loading: globalLoading, executeSecurely } = useData();
     const [actionLoading, setActionLoading] = useState(false);
     const [showSoundModal, setShowSoundModal] = useState(false);
+    const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+        () => getNotificationPermission()
+    );
+
+    useEffect(() => {
+        setNotifPermission(getNotificationPermission());
+    }, []);
+
+    const handleGrantPermission = async () => {
+        const result = await requestNotificationPermission();
+        setNotifPermission(result);
+        if (result === 'granted') {
+            showToast('Browser notifications enabled!', 'success');
+        } else if (result === 'denied') {
+            showToast('Notifications blocked. Please enable in browser settings.', 'error');
+        }
+    };
 
     const handleUpdateSetting = async (key: string, value: any) => {
         if (!userId) return;
@@ -247,6 +265,57 @@ const NotificationsSettings = () => {
                 <div className="max-w-content">
                     {actionLoading && <LoadingOverlay message="Updating..." transparent />}
 
+                    {/* ── Browser Permission Card ── */}
+                    <div className="settings-group">
+                        <div className="settings-group-title">Browser Notifications</div>
+                        <div className="profile-glass-card settings-card">
+                            <div className="privacy-toggle-item" style={{ gap: '16px', alignItems: 'flex-start' }}>
+                                <div style={{
+                                    width: 42, height: 42, borderRadius: '12px', flexShrink: 0,
+                                    background: notifPermission === 'granted' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    {notifPermission === 'granted'
+                                        ? <Bell size={20} color="#22c55e" />
+                                        : <BellOff size={20} color="#ef4444" />}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Permission Status</div>
+                                    <div className="toggle-desc" style={{
+                                        color: notifPermission === 'granted' ? '#22c55e'
+                                            : notifPermission === 'denied' ? '#ef4444' : 'var(--text-secondary)',
+                                        fontWeight: 600
+                                    }}>
+                                        {notifPermission === 'granted' ? '✓ Enabled — notifications will appear'
+                                            : notifPermission === 'denied' ? '✗ Blocked — allow in browser address bar'
+                                                : 'Not set — tap below to enable'}
+                                    </div>
+                                    {notifPermission !== 'granted' && (
+                                        <button
+                                            onClick={handleGrantPermission}
+                                            style={{
+                                                marginTop: '10px',
+                                                padding: '8px 18px',
+                                                borderRadius: '100px',
+                                                border: 'none',
+                                                background: 'var(--primary-color)',
+                                                color: 'white',
+                                                fontWeight: 700,
+                                                fontSize: '13px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <Shield size={14} /> Grant Permission
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="settings-group">
                         <div className="settings-group-title">Message Notifications</div>
                         <div className="profile-glass-card settings-card">
@@ -383,7 +452,7 @@ const NotificationsSettings = () => {
                     ))}
                 </div>
             </FloatingActionSheet>
-        </div>
+        </div >
     );
 };
 
