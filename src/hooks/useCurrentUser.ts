@@ -1,16 +1,19 @@
-import { insforge } from '../lib/insforge';
+import { useData } from '../context/DataContext';
 
 /**
  * Custom hook to get the current user's ID.
- * Reliably reads from the SDK's internal state.
+ * Optimized to use the global DataContext.
  */
 export const useCurrentUserId = (): string | null => {
-    return insforge.auth.user?.id || null;
+    const { userId } = useData();
+    return userId;
 };
 
 /**
- * Returns true if the user is currently logged in via the SDK.
+ * Returns true if the user is currently logged in.
+ * Optimized to use the global DataContext.
  */
 export const useIsLoggedIn = (): boolean => {
-    return !!insforge.auth.user;
+    const { userId } = useData();
+    return !!userId;
 };

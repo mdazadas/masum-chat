@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Phone, Video, Search, ArrowLeft, PhoneIncoming, PhoneMissed } from 'lucide-react';
+import { Phone, Video, Search, ArrowLeft, PhoneIncoming, PhoneMissed, PhoneOutgoing } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
@@ -25,38 +25,41 @@ const Calls = () => {
             setLoading(true);
             try {
                 // Step 1: Fetch all calls
-                const { data: callHistory, error } = await insforge.database
+                const { data: callHistory, error: callErr } = await insforge.database
                     .from('calls')
-                    .select('*')
+                    .select()
                     .or(`caller_id.eq.${userId},receiver_id.eq.${userId}`)
                     .order('created_at', { ascending: false })
                     .limit(50);
 
-                if (error) throw error;
+                if (callErr) throw callErr;
+
                 if (!callHistory || callHistory.length === 0) {
                     setCalls([]);
                     setLoading(false);
                     return;
                 }
 
-                // Step 2: Collect all unique other-party IDs in ONE set
+                // Step 2: Collect all unique other-party IDs
                 const otherPartyIds = [...new Set(
                     callHistory.map((call: any) =>
                         call.caller_id === userId ? call.receiver_id : call.caller_id
                     )
                 )];
 
-                // Step 3: Fetch ALL profiles in ONE batch query (not N+1)
-                const { data: profiles } = await insforge.database
+                // Step 3: Fetch ALL profiles in ONE batch query
+                const { data: profiles, error: profileErr } = await insforge.database
                     .from('profiles')
-                    .select('id, name, username, avatar_url')
+                    .select()
                     .in('id', otherPartyIds);
 
-                // Step 4: Build a lookup map for O(1) access
+                if (profileErr) throw profileErr;
+
+                // Step 4: Build a lookup map
                 const profileMap: Record<string, any> = {};
                 (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
 
-                // Step 5: Combine without any extra queries
+                // Step 5: Combine
                 const detailed = callHistory.map((call: any) => {
                     const otherPartyId = call.caller_id === userId ? call.receiver_id : call.caller_id;
                     const profile = profileMap[otherPartyId];
@@ -78,166 +81,209 @@ const Calls = () => {
         fetchCalls();
     }, [userId]);
 
-    const formatCallTime = (timestamp: string) => {
+    const formatCallTime = useCallback((timestamp: string) => {
         const date = new Date(timestamp);
         const now = new Date();
-        const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+        const callDate = new Date(date).setHours(0, 0, 0, 0);
+        const todayDate = new Date(now).setHours(0, 0, 0, 0);
+        const diffInDays = Math.round((todayDate - callDate) / (1000 * 60 * 60 * 24));
 
-        if (diffInDays === 0) return `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-        if (diffInDays === 1) return `Yesterday, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-        return date.toLocaleDateString([], { month: 'long', day: 'numeric' }) + `, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    };
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    const filteredCalls = calls.filter(call => {
-        const party = call.otherParty;
-        return party.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            party.username?.toLowerCase().includes(searchQuery.toLowerCase());
-    });
+        if (diffInDays === 0) return `Today, ${timeStr}`;
+        if (diffInDays === 1) return `Yesterday, ${timeStr}`;
+        if (diffInDays < 7) {
+            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return `${weekdays[date.getDay()]}, ${timeStr}`;
+        }
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + `, ${timeStr}`;
+    }, []);
+
+    const filteredCalls = useMemo(() => {
+        return calls.filter(call => {
+            const party = call.otherParty;
+            return party.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                party.username?.toLowerCase().includes(searchQuery.toLowerCase());
+        });
+    }, [calls, searchQuery]);
 
     return (
         <div className="home-container">
             {/* Header */}
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button className="nav-icon-btn" onClick={() => navigate('/home')}>
-                        <ArrowLeft size={24} />
-                    </button>
-                    <div className="top-nav-title">Calls</div>
-                </div>
-                <div className="top-nav-right">
-                    <div className="user-avatar-container" onClick={() => navigate('/profile/me')} style={{ cursor: 'pointer' }}>
-                        <Avatar
-                            src={profileData?.avatar_url}
-                            name={profileData?.name}
-                            size={40}
-                            className="user-avatar"
-                        />
+            <div className="max-w-content">
+                <nav className="top-nav" style={{ padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button className="nav-icon-btn ripple" onClick={() => navigate('/home')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ArrowLeft size={24} />
+                        </button>
+                        <h1 className="app-title" style={{ margin: 0, fontSize: '22px', color: 'var(--primary-dark)' }}>Calls</h1>
                     </div>
-                </div>
-            </nav>
+                    <div className="top-nav-right">
+                        <div className="user-avatar-container" onClick={() => navigate('/profile/me')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                            <Avatar
+                                src={profileData?.avatar_url}
+                                name={profileData?.name}
+                                size={38}
+                                className="user-avatar"
+                            />
+                        </div>
+                    </div>
+                </nav>
+            </div>
 
-            {/* Inline Search Bar */}
-            <div style={{ padding: '12px 16px', backgroundColor: 'var(--surface-color)', position: 'sticky', top: '72px', zIndex: 100 }}>
-                <div style={{ position: 'relative' }}>
+            {/* Standardized Search Bar */}
+            <div style={{ padding: '12px 20px', backgroundColor: 'var(--surface-color)', position: 'sticky', top: '72px', zIndex: 100 }}>
+                <div className="max-w-content" style={{
+                    backgroundColor: 'var(--secondary-color)',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                }}>
+                    <Search size={18} color="var(--text-secondary)" />
                     <input
                         type="search"
-                        className="input-field"
-                        placeholder="Search calls..."
-                        style={{
-                            padding: '10px 16px 10px 40px',
-                            borderRadius: '12px',
-                            marginBottom: 0,
-                            backgroundColor: 'var(--secondary-color)',
-                            border: 'none',
-                            fontSize: '15px'
-                        }}
+                        placeholder="Search call history"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         autoComplete="off"
                         autoCorrect="off"
                         autoCapitalize="none"
-                        spellCheck={false}
                         inputMode="search"
-                    />
-                    <Search
-                        size={18}
-                        style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', opacity: 0.7 }}
+                        style={{
+                            border: 'none',
+                            background: 'none',
+                            outline: 'none',
+                            fontSize: '15px',
+                            width: '100%',
+                            color: 'var(--text-primary)'
+                        }}
                     />
                 </div>
             </div>
 
             {/* Calls List */}
-            <div className="chat-list" style={{ flex: 1, overflowY: 'auto' }}>
-                <p style={{
-                    padding: '16px 20px',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    color: 'var(--primary-color)',
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
-                    opacity: 0.8
-                }}>
-                    {searchQuery.trim() ? `Search Results (${filteredCalls.length})` : "Recent"}
-                </p>
+            <div className="chat-list fade-in" style={{ flex: 1, overflowY: 'auto' }}>
+                <div className="max-w-content">
+                    <p style={{
+                        padding: '16px 20px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: 'var(--primary-color)',
+                        letterSpacing: '1.5px',
+                        textTransform: 'uppercase',
+                        opacity: 0.8
+                    }}>
+                        {searchQuery.trim() ? `Search Results (${filteredCalls.length})` : "Recent Calls"}
+                    </p>
 
-                {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' }}>
-                        <div className="spinner" style={{ width: 32, height: 32, borderWidth: 3, marginBottom: 12 }} />
-                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading history...</p>
-                    </div>
-                ) : filteredCalls.length > 0 ? (
-                    filteredCalls.map(call => {
-                        const party = call.otherParty;
-                        const isMissed = call.status === 'missed';
-                        const callColor = isMissed ? '#ef4444' : call.isIncoming ? '#22c55e' : '#3b82f6';
-                        const CallIcon = isMissed ? PhoneMissed : call.isIncoming ? PhoneIncoming : Phone;
-                        const callLabel = isMissed ? 'Missed' : call.isIncoming ? 'Incoming' : 'Outgoing';
+                    {loading ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' }}>
+                            <div className="spinner" style={{ width: 32, height: 32, marginBottom: 12, borderTopColor: 'var(--primary-color)' }} />
+                            <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)' }}>Loading history...</p>
+                        </div>
+                    ) : filteredCalls.length > 0 ? (
+                        Object.entries(
+                            filteredCalls.reduce((acc: Record<string, any[]>, call) => {
+                                const date = formatCallTime(call.created_at).split(',')[0];
+                                if (!acc[date]) acc[date] = [];
+                                acc[date].push(call);
+                                return acc;
+                            }, {})
+                        ).map(([date, group]: [string, any[]]) => (
+                            <div key={date}>
+                                <div style={{
+                                    padding: '8px 20px',
+                                    backgroundColor: 'var(--surface-color)',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    position: 'sticky',
+                                    top: 0,
+                                    zIndex: 5,
+                                    borderBottom: '1px solid var(--border-color)',
+                                    backdropFilter: 'blur(8px)',
+                                    background: 'var(--surface-color)'
+                                }}>
+                                    {date}
+                                </div>
+                                {group.map((call, idx) => {
+                                    const party = call.otherParty;
+                                    const isMissed = call.status === 'missed';
+                                    const callColor = isMissed ? '#ef4444' : call.isIncoming ? '#22c55e' : 'var(--primary-color)';
+                                    const CallIcon = isMissed ? PhoneMissed : call.isIncoming ? PhoneIncoming : PhoneOutgoing;
+                                    const isVideo = call.type === 'video';
 
-                        return (
-                            <div
-                                key={call.id}
-                                className="chat-item"
-                                style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}
-                                onClick={() => navigate(`/chat/${party.username}`)}
-                            >
-                                <div style={{ position: 'relative', flexShrink: 0 }}>
-                                    <Avatar src={party.avatar_url} name={party.name || party.username} size={48} />
-                                    <span style={{
-                                        position: 'absolute', bottom: -2, right: -2,
-                                        width: 18, height: 18, borderRadius: '50%',
-                                        background: callColor, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        border: '2px solid var(--bg-primary)'
-                                    }}>
-                                        <CallIcon size={9} color="white" strokeWidth={2.5} />
-                                    </span>
-                                </div>
-                                <div className="chat-info">
-                                    <div className="chat-row">
-                                        <span className="chat-name" style={{ fontWeight: 700 }}>
-                                            {party.name || `@${party.username}`}
-                                        </span>
-                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatCallTime(call.created_at)}</span>
-                                    </div>
-                                    <div className="chat-row" style={{ marginTop: 2 }}>
-                                        <span style={{ fontSize: '13px', color: callColor, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            {call.type === 'voice' ? <Phone size={12} /> : <Video size={12} />}
-                                            {call.type === 'voice' ? 'Voice' : 'Video'} · {callLabel}
-                                        </span>
-                                    </div>
-                                </div>
-                                {/* Action Buttons */}
-                                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                                    <button
-                                        style={{
-                                            width: 38, height: 38, borderRadius: '50%', border: 'none',
-                                            background: '#dcfce7', color: '#16a34a',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
-                                        }}
-                                        onClick={() => navigate(`/call/${party.username}?type=voice`)}
-                                        title="Voice call"
-                                    >
-                                        <Phone size={17} />
-                                    </button>
-                                    <button
-                                        style={{
-                                            width: 38, height: 38, borderRadius: '50%', border: 'none',
-                                            background: '#dbeafe', color: '#2563eb',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
-                                        }}
-                                        onClick={() => navigate(`/call/${party.username}?type=video`)}
-                                        title="Video call"
-                                    >
-                                        <Video size={17} />
-                                    </button>
-                                </div>
+                                    return (
+                                        <div
+                                            key={call.id}
+                                            className="chat-item"
+                                            style={{ cursor: 'pointer', padding: '14px 20px', backgroundColor: 'var(--surface-color)' }}
+                                            onClick={() => navigate(`/chat/${party.username}`, { state: { profile: party } })}
+                                        >
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                <Avatar src={party.avatar_url} name={party.name || party.username} size={48} />
+                                            </div>
+                                            <div className="chat-info" style={{ marginLeft: '16px', borderBottom: idx !== group.length - 1 ? '1px solid var(--border-color)' : 'none', paddingBottom: '14px', marginBottom: '-14px' }}>
+                                                <div className="chat-row">
+                                                    <span className="chat-name" style={{
+                                                        fontWeight: 600,
+                                                        fontSize: '16px',
+                                                        color: isMissed ? '#ef4444' : 'var(--text-primary)'
+                                                    }}>
+                                                        {party.name || `@${party.username}`}
+                                                    </span>
+                                                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                                        {formatCallTime(call.created_at).split(',')[1]}
+                                                    </span>
+                                                </div>
+                                                <div className="chat-row" style={{ marginTop: 4 }}>
+                                                    <span style={{ fontSize: '14px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <CallIcon size={16} color={callColor} />
+                                                        {call.isIncoming ? (isMissed ? 'Missed' : 'Incoming') : 'Outgoing'}
+                                                    </span>
+
+                                                    <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
+                                                        <button
+                                                            className="action-btn ripple"
+                                                            style={{
+                                                                width: 36, height: 36, borderRadius: '50%', border: 'none',
+                                                                background: 'transparent', color: 'var(--primary-color)',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                                                            }}
+                                                            onClick={() => navigate(`/call/${party.username}?type=${isVideo ? 'video' : 'voice'}`)}
+                                                        >
+                                                            {isVideo ? <Video size={20} /> : <Phone size={20} />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        );
-                    })
-                ) : (
-                    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        <p style={{ fontSize: '16px', fontWeight: 500 }}>No call history yet.</p>
-                    </div>
-                )}
+                        ))
+                    ) : (
+                        <div style={{
+                            marginTop: '100px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            color: 'var(--border-color)',
+                            padding: '0 40px',
+                            textAlign: 'center'
+                        }}>
+                            <Phone size={64} style={{ marginBottom: '16px', opacity: 0.3 }} />
+                            <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                                {searchQuery ? 'No calls found' : 'No call history'}
+                            </div>
+                            <div style={{ fontSize: '14px', marginTop: '8px', opacity: 0.6 }}>
+                                {searchQuery ? `No matches for "${searchQuery}"` : 'Recent voice and video calls will appear here.'}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Bottom Nav */}

@@ -3,51 +3,59 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LogIn, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { insforge } from '../lib/insforge';
-import { useUser } from '@insforge/react';
 
 const Login = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { user, isLoaded } = useUser();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Auto-redirect if already logged in (check both SDK and manual ID)
-  useEffect(() => {
-    const manualUserId = localStorage.getItem('masum_user_id');
-    const hasTabSession = localStorage.getItem('masum_tab_session') === 'active';
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isEmailValid = emailRegex.test(email);
+  const isPasswordValid = password.length >= 6;
+  const isFormValid = isEmailValid && isPasswordValid;
 
-    if ((isLoaded && user) || (manualUserId && hasTabSession)) {
-      navigate('/home', { replace: true });
-    }
-  }, [isLoaded, user, navigate]);
+  // Auto-redirect if already logged in (InsForge native)
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await insforge.auth.getCurrentSession();
+      if (data?.session) {
+        navigate('/home', { replace: true });
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { data, error } = await insforge.auth.signInWithPassword({ email, password });
+      // Official InsForge authentication
+      const { data, error } = await insforge.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password
+      });
 
-      if (error) {
-        showToast(error.message || 'Login failed. Check credentials.', 'error');
-        setLoading(false);
-      } else if (data) {
+      if (error) throw error;
+
+      if (data?.accessToken) {
         showToast('Welcome back to Masum Chat!', 'success');
 
         // Notify DataContext of auth change
         window.dispatchEvent(new Event('masum-auth-change'));
-        // SPA navigate — keeps SDK in-memory session alive (DO NOT use location.replace here)
-        navigate('/home', { replace: true });
-      } else {
-        showToast('Unexpected error. Please try again.', 'error');
-        setLoading(false);
+
+        setTimeout(() => {
+          navigate('/home', { replace: true });
+        }, 1000);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Login error:", err);
-      showToast('Something went wrong. Please try again.', 'error');
+      const message = err.message || 'Login failed. Check credentials.';
+      showToast(message, 'error');
+    } finally {
       setLoading(false);
     }
   };
@@ -73,7 +81,7 @@ const Login = () => {
             <input
               type="email"
               id="email"
-              className="input-field"
+              className={`input-field ${email && !isEmailValid ? 'error' : ''}`}
               placeholder=" "
               required
               value={email}
@@ -91,7 +99,7 @@ const Login = () => {
             <input
               type={showPassword ? 'text' : 'password'}
               id="password"
-              className="input-field"
+              className={`input-field ${password && !isPasswordValid ? 'error' : ''}`}
               placeholder=" "
               required
               value={password}
@@ -112,7 +120,7 @@ const Login = () => {
             <Link to="/forgot-password" className="auth-link">Forgot Password?</Link>
           </div>
 
-          <button type="submit" className="btn btn-primary" disabled={loading}>
+          <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid}>
             {loading ? (
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <span className="spinner-small" /> Logging in...
@@ -127,7 +135,25 @@ const Login = () => {
           Don't have an account? <Link to="/create-account" className="auth-link">Sign Up</Link>
         </p>
       </div>
-    </div>
+      <style>{`
+        .input-field.error {
+          border-color: #ef4444;
+          box-shadow: 0 0 0 1px #ef4444;
+        }
+        .input-field:focus {
+          background: var(--surface-color);
+          border-color: var(--primary-color);
+          box-shadow: 0 4px 12px var(--primary-light);
+        }
+        .auth-card {
+          animation: slideUpFade 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes slideUpFade {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div >
   );
 };
 

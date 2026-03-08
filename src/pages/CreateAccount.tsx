@@ -7,7 +7,7 @@ import { insforge } from '../lib/insforge';
 const CreateAccount = () => {
     const navigate = useNavigate();
     const { showToast } = useToast();
-    const [step, setStep] = useState(1); // 1: Details, 2: OTP Verify
+    const [authStep, setAuthStep] = useState(1); // 1: Details, 2: OTP Verify
     const [name, setName] = useState('');
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
@@ -18,6 +18,8 @@ const CreateAccount = () => {
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [loading, setLoading] = useState(false);
     const [resendTimer, setResendTimer] = useState(0);
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     useEffect(() => {
         let interval: any;
@@ -34,6 +36,12 @@ const CreateAccount = () => {
     const checkTimeout = useRef<any>(null);
     const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+    const isEmailValid = emailRegex.test(email);
+    const isPasswordValid = password.length >= 6;
+    const doPasswordsMatch = password === confirmPassword;
+    const isNameValid = name.trim().length >= 2;
+    const isFormValid = isEmailValid && isPasswordValid && doPasswordsMatch && isNameValid && usernameStatus === 'available';
+
     const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Backspace' && !otp[index] && index > 0) {
             otpRefs.current[index - 1]?.focus();
@@ -41,11 +49,19 @@ const CreateAccount = () => {
     };
 
     const handleOtpChange = (index: number, value: string) => {
-        if (value.length > 1) return;
+        const char = value.replace(/[^0-9]/g, '').slice(-1);
         const newOtp = [...otp];
-        newOtp[index] = value;
+        newOtp[index] = char;
         setOtp(newOtp);
-        if (value && index < 5) otpRefs.current[index + 1]?.focus();
+        if (char && index < 5) otpRefs.current[index + 1]?.focus();
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const pasted = e.clipboardData.getData('text').slice(0, 6).replace(/[^0-9]/g, '');
+        if (pasted.length === 6) {
+            setOtp(pasted.split(''));
+            otpRefs.current[5]?.focus();
+        }
     };
 
     const checkUsername = async (val: string) => {
@@ -75,26 +91,21 @@ const CreateAccount = () => {
 
         checkTimeout.current = setTimeout(async () => {
             try {
-                const { data, error } = await insforge.database
+                const { data: checkData } = await insforge.database
                     .from('profiles')
-                    .select('id')
+                    .select()
                     .eq('username', val.trim().toLowerCase())
-                    .single();
+                    .maybeSingle();
 
-                if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows found"
-                    console.error("User check error:", error);
-                    return;
-                }
-
-                if (data) {
+                if (checkData) {
                     setUsernameStatus('unavailable');
                     setUsernameError('Username already taken');
                 } else {
                     setUsernameStatus('available');
                     setUsernameError('');
                 }
-            } catch (err) {
-                console.error("Check catch:", err);
+            } catch (err: any) {
+                console.error("User check error:", err);
             }
         }, 500);
     };
@@ -126,11 +137,13 @@ const CreateAccount = () => {
         setLoading(true);
         try {
             // Check if email already exists in profiles
-            const { data: existingEmail } = await insforge.database
+            const { data: existingEmail, error: emailCheckError } = await insforge.database
                 .from('profiles')
                 .select('id')
                 .eq('email', email.toLowerCase().trim())
-                .single();
+                .maybeSingle();
+
+            if (emailCheckError && emailCheckError.code !== 'PGRST116') throw emailCheckError;
 
             if (existingEmail) {
                 showToast('This email is already associated with an account.', 'error');
@@ -138,20 +151,37 @@ const CreateAccount = () => {
                 return;
             }
 
-            const { error } = await insforge.auth.signUp({
+            const { data, error } = await insforge.auth.signUp({
                 email,
                 password,
-                name,
+                name
             });
-            if (error) {
-                showToast(error.message || 'Sign up failed.', 'error');
-            } else {
+
+            if (error) throw error;
+
+            if (data?.requireEmailVerification) {
                 showToast('Verification code sent!', 'success');
-                setStep(2);
+                setAuthStep(2);
                 setResendTimer(60);
+                setTimeout(() => otpRefs.current[0]?.focus(), 100);
+            } else if (data?.accessToken) {
+                if (data?.user) {
+                    // Ensure profile is created/linked correctly using upsert for idempotency
+                    await insforge.database.from('profiles').upsert([{
+                        id: data.user.id,
+                        name: name,
+                        username: username.toLowerCase().trim(),
+                        email: email.toLowerCase().trim(),
+                        avatar_url: null
+                    }], { onConflict: 'id' });
+                }
+                showToast('Welcome to Masum Chat!', 'success');
+                window.dispatchEvent(new Event('masum-auth-change'));
+                navigate('/home', { replace: true });
             }
-        } catch {
-            showToast('Something went wrong. Please try again.', 'error');
+        } catch (error: any) {
+            console.error("Sign up error:", error);
+            showToast(error?.message || 'Sign up failed.', 'error');
         } finally {
             setLoading(false);
         }
@@ -166,31 +196,30 @@ const CreateAccount = () => {
         }
         setLoading(true);
         try {
-            const { data, error } = await insforge.auth.verifyEmail({ email, otp: code });
-            if (error) {
-                showToast(error.message || 'Invalid code. Try again.', 'error');
-            } else if (data?.user) {
-                // Manually create profile in public.profiles table since DB triggers are restricted
-                await insforge.database
-                    .from('profiles')
-                    .upsert({
-                        id: data.user.id,
-                        name: name,
-                        username: username.toLowerCase().trim(),
-                        email: email.toLowerCase().trim(),
-                        avatar_url: `https://i.pravatar.cc/150?u=${data.user.id}`
-                    });
+            const { data, error } = await insforge.auth.verifyEmail({
+                email,
+                otp: code
+            });
 
-                sessionStorage.setItem('masum_tab_session', 'active');
-                sessionStorage.setItem('masum_user_id', data.user.id);
-                localStorage.setItem('masum_user_id_backup', data.user.id);
+            if (error) throw error;
+
+            if (data?.user) {
+                // Ensure profile is created/linked correctly using upsert for idempotency
+                await insforge.database.from('profiles').upsert([{
+                    id: data.user.id,
+                    name: name,
+                    username: username.toLowerCase().trim(),
+                    email: email.toLowerCase().trim(),
+                    avatar_url: null
+                }], { onConflict: 'id' });
 
                 showToast('Welcome to Masum Chat!', 'success');
                 window.dispatchEvent(new Event('masum-auth-change'));
                 navigate('/home', { replace: true });
             }
-        } catch {
-            showToast('Verification failed. Please try again.', 'error');
+        } catch (error: any) {
+            console.error("Verification error:", error);
+            showToast(error?.message || 'Verification failed. Please try again.', 'error');
         } finally {
             setLoading(false);
         }
@@ -211,14 +240,14 @@ const CreateAccount = () => {
                         <MessageCircle size={36} color="white" fill="white" />
                     </div>
                 </div>
-                <h1 className="auth-title">{step === 1 ? 'Create Account' : 'Verify Email'}</h1>
+                <h1 className="auth-title">{authStep === 1 ? 'Create Account' : 'Verify Email'}</h1>
                 <p className="auth-subtitle">
-                    {step === 1
+                    {authStep === 1
                         ? 'Join Masum Chat — fast, secure messaging.'
                         : `Enter the 6-digit code sent to ${email}`}
                 </p>
 
-                {step === 1 && (
+                {authStep === 1 && (
                     <form onSubmit={handleSignUp}>
                         <div className="form-group">
                             <input
@@ -321,7 +350,7 @@ const CreateAccount = () => {
                             )}
                         </div>
 
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                        <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                     <span className="spinner" /> Creating account...
@@ -333,7 +362,7 @@ const CreateAccount = () => {
                     </form>
                 )}
 
-                {step === 2 && (
+                {authStep === 2 && (
                     <form onSubmit={handleVerifyOtp}>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 24 }}>
                             {otp.map((digit, i) => (
@@ -345,6 +374,7 @@ const CreateAccount = () => {
                                     maxLength={1}
                                     className="otp-input"
                                     value={digit}
+                                    onPaste={i === 0 ? handlePaste : undefined}
                                     onChange={(e) => handleOtpChange(i, e.target.value)}
                                     onKeyDown={(e) => handleKeyDown(i, e)}
                                 />
@@ -379,7 +409,7 @@ const CreateAccount = () => {
                         <button
                             type="button"
                             style={{ marginTop: 12, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', width: '100%', fontSize: 13 }}
-                            onClick={() => { setOtp(['', '', '', '', '', '']); setStep(1); }}
+                            onClick={() => { setOtp(['', '', '', '', '', '']); setAuthStep(1); }}
                         >
                             ← Back to details
                         </button>
@@ -390,6 +420,32 @@ const CreateAccount = () => {
                     Already have an account? <Link to="/" className="auth-link">Login</Link>
                 </p>
             </div>
+            <style>{`
+                .otp-input {
+                    background: var(--secondary-color);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid var(--border-color);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                    color: var(--text-primary);
+                }
+                .otp-input:focus {
+                    background: var(--surface-color);
+                    border-color: var(--primary-color);
+                    box-shadow: 0 0 0 4px var(--primary-light);
+                    transform: translateY(-2px);
+                }
+                .input-field.error {
+                    border-color: #ef4444;
+                    box-shadow: 0 0 0 1px #ef4444;
+                }
+                .auth-card {
+                    animation: fadeInScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+                }
+                @keyframes fadeInScale {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+            `}</style>
         </div>
     );
 };

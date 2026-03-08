@@ -1,72 +1,168 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Shield, UserCheck, Activity, Power, Mail, ExternalLink } from 'lucide-react';
 
 const TermsConditions = () => {
     const navigate = useNavigate();
 
     return (
-        <div className="home-container" style={{ backgroundColor: 'var(--surface-color)' }}>
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button className="nav-icon-btn" onClick={() => navigate(-1)}>
+        <div className="profile-container premium-bg">
+            <style>{`
+                .terms-section {
+                    margin-bottom: 24px;
+                }
+                .terms-card {
+                    padding: 24px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                }
+                .terms-header-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    margin-bottom: 4px;
+                }
+                .terms-icon-box {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 10px;
+                    background: var(--secondary-color);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--primary-color);
+                    flex-shrink: 0;
+                }
+                .terms-title {
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: var(--text-primary);
+                }
+                .terms-text {
+                    font-size: 14px;
+                    color: var(--text-secondary);
+                    line-height: 1.6;
+                    font-weight: 500;
+                }
+                .support-footer {
+                    margin-top: 40px;
+                    padding: 32px 24px;
+                    text-align: center;
+                }
+            `}</style>
+
+            <div className="profile-nav glass-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '0 16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="top-nav-title" style={{ position: 'static', transform: 'none' }}>Terms & Conditions</div>
+                    <span className="profile-nav-title" style={{ color: 'var(--primary-color)', fontWeight: 800 }}>Terms & Conditions</span>
                 </div>
-            </nav>
+            </div>
 
-            <div style={{ padding: '24px 20px', flex: 1, overflowY: 'auto' }}>
-                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                    <h1 style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '12px' }}>Terms and Conditions</h1>
-                    <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', fontSize: '15px' }}>
-                        By using Masum Chat, you agree to these legal terms and our community guidelines.
+            <div className="profile-content" style={{ paddingBottom: '60px' }}>
+                <div style={{ padding: '20px 20px 4px' }}>
+                    <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary-color)', marginBottom: '6px' }}>Legal Disclosure</h1>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, lineHeight: 1.5 }}>
+                        By using Masum Chat, you agree to comply with our core principles of privacy, safety, and respect for our global community.
                     </p>
+                </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                        <section>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ width: '24px', height: '24px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>1</span>
-                                Acceptable Use
-                            </h2>
-                            <p style={{ color: 'var(--text-primary)', lineHeight: '1.6', fontSize: '14px' }}>
-                                You agree not to use Masum Chat for any illegal purposes or to harass other users. Authentic and respectful communication is required.
+                <div style={{ padding: '16px' }}>
+                    <div className="profile-glass-card terms-card">
+                        <section className="terms-section" style={{ marginBottom: '0' }}>
+                            <div className="terms-header-row">
+                                <div className="terms-icon-box">
+                                    <UserCheck size={20} />
+                                </div>
+                                <h2 className="terms-title">1. Acceptable Use</h2>
+                            </div>
+                            <p className="terms-text">
+                                You agree not to use Masum Chat for any illegal purposes or to harass other users. Authentic and respectful communication is the foundation of our platform.
                             </p>
                         </section>
 
-                        <section>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ width: '24px', height: '24px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>2</span>
-                                Account Responsibility
-                            </h2>
-                            <p style={{ color: 'var(--text-primary)', lineHeight: '1.6', fontSize: '14px' }}>
-                                You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account.
+                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+
+                        <section className="terms-section" style={{ marginBottom: '0' }}>
+                            <div className="terms-header-row">
+                                <div className="terms-icon-box">
+                                    <Shield size={20} />
+                                </div>
+                                <h2 className="terms-title">2. Account Responsibility</h2>
+                            </div>
+                            <p className="terms-text">
+                                You are solely responsible for maintaining the confidentiality of your credentials. All activities occurring under your account are your legal responsibility.
                             </p>
                         </section>
 
-                        <section>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ width: '24px', height: '24px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>3</span>
-                                Service Availability
-                            </h2>
-                            <p style={{ color: 'var(--text-primary)', lineHeight: '1.6', fontSize: '14px' }}>
-                                We strive for maximum uptime but do not guarantee uninterrupted service. We reserve the right to perform maintenance as needed.
+                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+
+                        <section className="terms-section" style={{ marginBottom: '0' }}>
+                            <div className="terms-header-row">
+                                <div className="terms-icon-box">
+                                    <Activity size={20} />
+                                </div>
+                                <h2 className="terms-title">3. Service Availability</h2>
+                            </div>
+                            <p className="terms-text">
+                                While we strive for 100% uptime, our services are provided "as is." We reserve the right to perform critical maintenance to ensure platform stability and security.
                             </p>
                         </section>
 
-                        <section>
-                            <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--primary-color)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ width: '24px', height: '24px', borderRadius: '6px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>4</span>
-                                Termination
-                            </h2>
-                            <p style={{ color: 'var(--text-primary)', lineHeight: '1.6', fontSize: '14px' }}>
-                                We reserve the right to terminate accounts that violate our community guidelines or engage in suspicious activity.
+                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+
+                        <section className="terms-section" style={{ marginBottom: '0' }}>
+                            <div className="terms-header-row">
+                                <div className="terms-icon-box">
+                                    <Power size={20} />
+                                </div>
+                                <h2 className="terms-title">4. Termination Rights</h2>
+                            </div>
+                            <p className="terms-text">
+                                We maintain a zero-tolerance policy for abuse. Masum Chat reserves the right to suspend or terminate accounts that violate our community standards.
                             </p>
                         </section>
                     </div>
 
-                    <div style={{ marginTop: '48px', padding: '16px', borderRadius: '12px', backgroundColor: 'var(--secondary-color)', border: '1px solid var(--border-color)' }}>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
-                            <strong>Last updated:</strong> February 2026
+                    <div className="support-footer profile-glass-card" style={{ marginTop: '24px', padding: '32px 20px' }}>
+                        <div style={{
+                            width: '64px',
+                            height: '64px',
+                            borderRadius: '20px',
+                            background: 'var(--secondary-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 20px',
+                            color: 'var(--primary-color)'
+                        }}>
+                            <Mail size={32} />
+                        </div>
+                        <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Legal Questions?</h3>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '24px', lineHeight: 1.5 }}>
+                            If you have any questions regarding our legal framework or community guidelines, please reach out to our legal team.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <button className="premium-btn-primary" style={{ width: '100%', gap: '10px', height: '52px' }}>
+                                <Mail size={18} /> Contact Legal Team
+                            </button>
+                            <button className="premium-btn-secondary" style={{ width: '100%', gap: '10px', height: '52px' }}>
+                                <ExternalLink size={18} /> View Community Guidelines
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+                        <p style={{
+                            color: 'var(--text-secondary)',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            opacity: 0.6
+                        }}>
+                            Last Updated: February 2026
                         </p>
                     </div>
                 </div>

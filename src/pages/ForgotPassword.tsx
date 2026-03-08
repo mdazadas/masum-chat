@@ -7,13 +7,19 @@ import { insforge } from '../lib/insforge';
 const ForgotPassword = () => {
     const navigate = useNavigate();
     const { showToast } = useToast();
-    const [step, setStep] = useState(1);
+    const [recoveryStep, setRecoveryStep] = useState(1);
     const [otp, setOtp] = useState(['', '', '', '', '', '']); // 6-digit OTP
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [resendTimer, setResendTimer] = useState(0);
+
+    const [userEmail, setUserEmail] = useState('');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const isEmailValid = emailRegex.test(userEmail);
+    const isPasswordValid = password.length >= 6;
+    const doPasswordsMatch = password === confirmPassword;
     const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     useEffect(() => {
@@ -27,13 +33,21 @@ const ForgotPassword = () => {
     }, [resendTimer]);
 
     const handleOtpChange = (index: number, value: string) => {
-        if (value.length > 1) return;
+        const char = value.replace(/[^0-9]/g, '').slice(-1);
         const newOtp = [...otp];
-        newOtp[index] = value;
+        newOtp[index] = char;
         setOtp(newOtp);
 
-        if (value && index < 5) {
+        if (char && index < 5) {
             otpRefs.current[index + 1]?.focus();
+        }
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const pasted = e.clipboardData.getData('text').slice(0, 6).replace(/[^0-9]/g, '');
+        if (pasted.length === 6) {
+            setOtp(pasted.split(''));
+            otpRefs.current[5]?.focus();
         }
     };
 
@@ -43,21 +57,24 @@ const ForgotPassword = () => {
         }
     };
 
-    const [resetToken, setResetToken] = useState('');
-    const [userEmail, setUserEmail] = useState('');
 
-    const handleSendOTP = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const email = (e.target as any).email.value || userEmail;
+    const handleSendOTP = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!isEmailValid) {
+            showToast('Please enter a valid email address', 'error');
+            return;
+        }
+
         setLoading(true);
         try {
             // Check if user exists first
-            const { data: profileData } = await insforge.database
+            const { data: profile, error: profileErr } = await insforge.database
                 .from('profiles')
                 .select('id')
-                .eq('email', email);
+                .eq('email', userEmail.toLowerCase().trim())
+                .maybeSingle();
 
-            const profile = profileData?.[0];
+            if (profileErr && profileErr.code !== 'PGRST116') throw profileErr;
 
             if (!profile) {
                 showToast('Account not found with this email.', 'error');
@@ -65,13 +82,13 @@ const ForgotPassword = () => {
                 return;
             }
 
-            const { error } = await insforge.auth.sendResetPasswordEmail({ email });
-            if (error) throw error;
+            const { error: resetErr } = await insforge.auth.sendResetPasswordEmail({ email: userEmail });
+            if (resetErr) throw resetErr;
 
-            setUserEmail(email);
             showToast('Verification code sent!', 'success');
-            setStep(2);
+            setRecoveryStep(2);
             setResendTimer(60);
+            setTimeout(() => otpRefs.current[0]?.focus(), 100);
         } catch (err: any) {
             showToast(err.message || 'Failed to send OTP', 'error');
         } finally {
@@ -80,39 +97,36 @@ const ForgotPassword = () => {
     };
 
     const handleVerifyOTP = async () => {
-        const code = otp.join('');
-        setLoading(true);
-        try {
-            const { data, error } = await insforge.auth.exchangeResetPasswordToken({
-                email: userEmail,
-                code: code
-            });
-            if (error) throw error;
-            if (data?.token) {
-                setResetToken(data.token);
-                setStep(3);
-                showToast('OTP verified', 'success');
-            }
-        } catch (err: any) {
-            showToast(err.message || 'Verification failed', 'error');
-        } finally {
-            setLoading(false);
+        if (otp.some(digit => !digit)) {
+            showToast('Please enter the full 6-digit code.', 'error');
+            return;
         }
+        setRecoveryStep(3);
     };
 
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (password !== confirmPassword) return;
+        if (!isPasswordValid) {
+            showToast('Password must be at least 6 characters long', 'error');
+            return;
+        }
+        if (!doPasswordsMatch) {
+            showToast('Passwords do not match', 'error');
+            return;
+        }
+
         setLoading(true);
         try {
-            const { error } = await insforge.auth.resetPassword({
-                otp: resetToken,
+            const { error: resetErr } = await insforge.auth.resetPassword({
+                otp: otp.join(''),
                 newPassword: password
             });
-            if (error) throw error;
+            if (resetErr) throw resetErr;
 
             showToast('Password reset! Please login.', 'success');
-            navigate('/', { replace: true });
+            setTimeout(() => {
+                navigate('/', { replace: true });
+            }, 2000);
         } catch (err: any) {
             showToast(err.message || 'Failed to reset password', 'error');
         } finally {
@@ -143,15 +157,17 @@ const ForgotPassword = () => {
 
                 <p className="auth-subtitle">Reset your account password easily.</p>
 
-                {step === 1 && (
+                {recoveryStep === 1 && (
                     <form onSubmit={handleSendOTP}>
                         <div className="form-group">
                             <input
                                 type="email"
                                 id="email"
-                                className="input-field"
+                                className={`input-field ${userEmail && !isEmailValid ? 'error' : ''}`}
                                 placeholder=" "
                                 required
+                                value={userEmail}
+                                onChange={(e) => setUserEmail(e.target.value)}
                                 autoComplete="email"
                                 autoCorrect="off"
                                 autoCapitalize="none"
@@ -160,7 +176,7 @@ const ForgotPassword = () => {
                             />
                             <label htmlFor="email" className="input-label">Email ID</label>
                         </div>
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                        <button type="submit" className="btn btn-primary" disabled={loading || !isEmailValid}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                     <span className="spinner-small" /> Sending...
@@ -172,7 +188,7 @@ const ForgotPassword = () => {
                     </form>
                 )}
 
-                {step === 2 && (
+                {recoveryStep === 2 && (
                     <div>
                         <p className="auth-subtitle">Verify the 6-digit OTP sent to your email.</p>
                         <div className="otp-group">
@@ -184,6 +200,7 @@ const ForgotPassword = () => {
                                     maxLength={1}
                                     className="otp-input"
                                     value={digit}
+                                    onPaste={i === 0 ? handlePaste : undefined}
                                     onChange={(e) => handleOtpChange(i, e.target.value)}
                                     onKeyDown={(e) => handleKeyDown(i, e)}
                                     inputMode="numeric"
@@ -221,7 +238,7 @@ const ForgotPassword = () => {
                     </div>
                 )}
 
-                {step === 3 && (
+                {recoveryStep === 3 && (
                     <form onSubmit={handleResetPassword}>
                         <div className="form-group">
                             <input
@@ -271,7 +288,7 @@ const ForgotPassword = () => {
                                 </div>
                             )}
                         </div>
-                        <button type="submit" className="btn btn-primary" disabled={!passwordsMatch || !password || loading}>
+                        <button type="submit" className="btn btn-primary" disabled={!isPasswordValid || !doPasswordsMatch || loading}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                     <span className="spinner-small" /> Resetting...
@@ -287,6 +304,31 @@ const ForgotPassword = () => {
                     <Link to="/" className="btn-link">Back to Login</Link>
                 </div>
             </div>
+            <style>{`
+                .otp-input {
+                    background: rgba(255, 255, 255, 0.05);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                }
+                .otp-input:focus {
+                    background: rgba(255, 255, 255, 0.08);
+                    border-color: var(--primary-color);
+                    box-shadow: 0 0 0 4px var(--primary-light);
+                    transform: translateY(-2px);
+                }
+                .input-field.error {
+                    border-color: #ef4444;
+                    box-shadow: 0 0 0 1px #ef4444;
+                }
+                .auth-card {
+                    animation: fadeInScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+                }
+                @keyframes fadeInScale {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+            `}</style>
         </div>
     );
 };

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { getInitials, getHashColor } from '../lib/utils';
 
 interface AvatarProps {
     src?: string | null;
@@ -10,25 +11,8 @@ interface AvatarProps {
 }
 
 const Avatar = ({ src, name, size = 40, className = '', style = {}, priority = 'auto' }: AvatarProps) => {
-    const initials = useMemo(() => {
-        if (!name) return '?';
-        const parts = name.trim().split(/\s+/);
-        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }, [name]);
-
-    const backgroundColor = useMemo(() => {
-        const colors = [
-            '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3',
-            '#FF3385', '#FF8F33', '#8A33FF', '#33A2FF', '#00a884'
-        ];
-        if (!name) return '#ccc';
-        let hash = 0;
-        for (let i = 0; i < name.length; i++) {
-            hash = name.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        return colors[Math.abs(hash) % colors.length];
-    }, [name]);
+    const initials = useMemo(() => getInitials(name), [name]);
+    const backgroundColor = useMemo(() => getHashColor(name), [name]);
 
     const sizePx = typeof size === 'number' ? `${size}px` : size;
 

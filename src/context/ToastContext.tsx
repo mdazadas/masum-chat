@@ -92,51 +92,58 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast, onRemove: () => void }) 
 
     return (
         <div style={{
-            background: 'var(--surface-color)',
-            border: `1px solid ${c.border}30`,
+            background: 'var(--glass-bg)',
+            backdropFilter: 'blur(var(--glass-blur)) saturate(180%)',
+            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(180%)',
+            border: `1px solid var(--glass-border)`,
             borderLeft: `4px solid ${c.bg}`,
-            padding: '10px 12px',
-            borderRadius: '12px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+            padding: '12px 14px',
+            borderRadius: '16px',
+            boxShadow: 'var(--glass-shadow)',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            gap: '12px',
             pointerEvents: 'auto',
-            animation: 'toast-pop 0.28s cubic-bezier(0.34,1.56,0.64,1)'
+            animation: 'toast-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}>
             {/* App logo icon */}
             <div style={{
-                width: 32, height: 32, borderRadius: 8,
-                background: c.bg,
+                width: 36, height: 36, borderRadius: 10,
+                background: `linear-gradient(135deg, ${c.bg}, ${c.accent})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, boxShadow: `0 3px 8px ${c.bg}55`
+                flexShrink: 0, boxShadow: `0 4px 12px ${c.bg}44`
             }}>
-                <MessageCircle size={17} color="white" fill="white" />
+                <MessageCircle size={18} color="white" fill="white" />
             </div>
             {/* Content */}
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: c.bg, letterSpacing: '0.4px', textTransform: 'uppercase', marginBottom: 2 }}>
-                    Masum Chat
+                <div style={{ fontSize: '10px', fontWeight: 800, color: c.bg, letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 2 }}>
+                    Notification
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.4, opacity: 0.95 }}>
                     {toast.message}
                 </div>
             </div>
-            {/* Status icon */}
-            <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {c.icon}
-                </div>
-            </div>
+            {/* Status icon or Close */}
             <button
                 onClick={onRemove}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', padding: '2px', cursor: 'pointer', display: 'flex', flexShrink: 0 }}
+                style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    padding: '6px',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexShrink: 0,
+                    transition: 'all 0.2s ease'
+                }}
             >
                 <X size={14} />
             </button>
             <style>{`
                 @keyframes toast-pop {
-                    from { transform: translateY(14px) scale(0.96); opacity: 0; }
+                    from { transform: translateY(20px) scale(0.9); opacity: 0; }
                     to { transform: translateY(0) scale(1); opacity: 1; }
                 }
             `}</style>

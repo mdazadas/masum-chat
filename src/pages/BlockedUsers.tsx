@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Shield } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -26,23 +27,26 @@ const BlockedUsers = () => {
         const fetchBlockedUsers = async () => {
             setLoading(true);
             try {
-                const { data: blockedRecords, error } = await insforge.database
+                const { data: blockedRecords, error: blockErr } = await insforge.database
                     .from('blocked_users')
-                    .select('*')
+                    .select()
                     .eq('blocker_id', userId);
 
-                if (error) throw error;
+                if (blockErr) throw blockErr;
+
                 if (!blockedRecords || blockedRecords.length === 0) {
                     setBlockedList([]);
                     return;
                 }
 
-                // Batch fetch all profiles in ONE query (not N+1)
+                // Batch fetch all profiles in ONE query
                 const blockedIds = blockedRecords.map((r: any) => r.blocked_id);
-                const { data: profiles } = await insforge.database
+                const { data: profiles, error: profileErr } = await insforge.database
                     .from('profiles')
-                    .select('id, name, username, avatar_url')
+                    .select()
                     .in('id', blockedIds);
+
+                if (profileErr) throw profileErr;
 
                 const profileMap: Record<string, any> = {};
                 (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
@@ -68,22 +72,21 @@ const BlockedUsers = () => {
         fetchBlockedUsers();
     }, [userId]);
 
-    const handleBack = () => navigate(-1);
+    const handleBack = useCallback(() => navigate(-1), [navigate]);
 
-    const handleUnblock = async () => {
+    const handleUnblock = useCallback(async () => {
         if (userToUnblock && userId) {
             setActionLoading(true);
             setLoadingMessage('Unblocking...');
             try {
-                const { error } = await insforge.database
+                const { error: deleteErr } = await insforge.database
                     .from('blocked_users')
                     .delete()
-                    .eq('blocker_id', userId)
-                    .eq('blocked_id', userToUnblock.profile.id);
+                    .eq('id', userToUnblock.id);
 
-                if (error) throw error;
+                if (deleteErr) throw deleteErr;
 
-                setBlockedList(prev => prev.filter(item => item.profile.id !== userToUnblock.profile.id));
+                setBlockedList(prev => prev.filter(item => item.id !== userToUnblock.id));
                 showToast(`${userToUnblock.profile.name} has been unblocked`, 'success');
             } catch (err) {
                 showToast('Failed to unblock user', 'error');
@@ -92,7 +95,7 @@ const BlockedUsers = () => {
                 setUserToUnblock(null);
             }
         }
-    };
+    }, [userToUnblock, userId, showToast]);
 
     const filteredUsers = blockedList.filter(item => {
         const p = item.profile;
@@ -101,17 +104,16 @@ const BlockedUsers = () => {
     });
 
     return (
-        <div className="home-container" style={{ backgroundColor: 'var(--surface-color)' }}>
+        <div className="profile-container premium-bg">
             {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
-            {/* Header */}
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button className="nav-icon-btn" onClick={handleBack}>
+            <div className="profile-nav glass-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={handleBack} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="top-nav-title">Blocked Users</div>
+                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Blocked Users</span>
                 </div>
-            </nav>
+            </div>
 
             {/* Search Bar */}
             <div style={{ padding: '12px 20px', backgroundColor: 'var(--surface-color)' }}>
@@ -145,15 +147,15 @@ const BlockedUsers = () => {
                 </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-                <div style={{ padding: '16px 20px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <div style={{ flex: 1, overflowY: 'auto' }} className="fade-in">
+                <div style={{ padding: '16px 20px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, opacity: 0.8 }}>
                     Blocked contacts will no longer be able to call you or send you messages.
                 </div>
 
                 {loading ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', gap: '16px' }}>
                         <div className="spinner" style={{ width: 40, height: 40, borderWidth: 4 }} />
-                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading list...</p>
+                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Syncing list...</p>
                     </div>
                 ) :
                     filteredUsers.length > 0 ? (
@@ -176,15 +178,17 @@ const BlockedUsers = () => {
                                     </div>
                                     <button
                                         onClick={() => setUserToUnblock(item)}
+                                        className="btn-unblock"
                                         style={{
                                             backgroundColor: 'var(--secondary-color)',
                                             color: 'var(--primary-color)',
                                             border: 'none',
-                                            padding: '8px 16px',
+                                            padding: '8px 18px',
                                             borderRadius: '20px',
-                                            fontWeight: 600,
-                                            fontSize: '13px',
-                                            cursor: 'pointer'
+                                            fontWeight: 700,
+                                            fontSize: '12px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
                                         }}
                                     >
                                         Unblock
@@ -202,74 +206,62 @@ const BlockedUsers = () => {
                             padding: '0 40px',
                             textAlign: 'center'
                         }}>
-                            <Shield size={64} style={{ marginBottom: '16px', opacity: 0.5 }} />
-                            <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-secondary)' }}>No blocked users</div>
-                            <div style={{ fontSize: '14px', marginTop: '8px' }}>Users you block will appear here.</div>
+                            <Shield size={64} color="var(--primary-color)" style={{ marginBottom: '16px', opacity: 0.8 }} />
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--primary-color)' }}>
+                                {searchTerm ? 'No matches found' : 'No blocked users'}
+                            </div>
+                            <div style={{ fontSize: '14px', marginTop: '8px', opacity: 0.7, color: 'var(--text-secondary)' }}>
+                                {searchTerm ? `No results for "${searchTerm}"` : 'Users you block will appear here for management.'}
+                            </div>
                         </div>
                     )}
             </div>
 
-            {/* Confirmation Modal */}
-            {userToUnblock && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1000,
-                    padding: '24px'
-                }}>
-                    <div style={{
-                        backgroundColor: 'var(--surface-color)',
-                        borderRadius: '24px',
-                        width: '100%',
-                        maxWidth: '320px',
-                        padding: '24px',
-                        textAlign: 'center',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
-                    }}>
-                        <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 12px 0' }}>Unblock {userToUnblock.profile.name}?</h3>
-                        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 24px 0' }}>
-                            After unblocking, {userToUnblock.profile.name} will be able to message you and see your status updates.
+            {/* Standardized Confirmation Modal */}
+            {userToUnblock && createPortal(
+                <div className="overlay-backdrop" style={{ zIndex: 3000, position: 'fixed', inset: 0, transform: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)' }} onClick={() => setUserToUnblock(null)}>
+                    <div className="context-menu-card" style={{ padding: '24px', width: '90%', maxWidth: '340px' }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 12px 0', color: 'var(--text-primary)' }}>
+                            Unblock {userToUnblock.profile.name}?
+                        </h3>
+                        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 24px 0', opacity: 0.9 }}>
+                            They will be able to message you and see your status updates again.
                         </p>
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={() => setUserToUnblock(null)}
+                                className="btn btn-outline"
                                 style={{
                                     flex: 1,
                                     padding: '12px',
-                                    borderRadius: '12px',
+                                    borderRadius: '14px',
+                                    fontWeight: 700,
+                                    backgroundColor: 'transparent',
                                     border: '1px solid var(--border-color)',
-                                    background: 'none',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
+                                    color: 'var(--text-secondary)'
                                 }}
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUnblock}
+                                className="btn btn-primary"
                                 style={{
                                     flex: 1,
                                     padding: '12px',
-                                    borderRadius: '12px',
+                                    borderRadius: '14px',
+                                    fontWeight: 700,
                                     border: 'none',
                                     backgroundColor: 'var(--primary-color)',
-                                    color: '#ffffff',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
+                                    color: '#ffffff'
                                 }}
                             >
                                 Unblock
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

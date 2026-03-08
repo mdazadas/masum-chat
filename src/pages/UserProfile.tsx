@@ -1,265 +1,546 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MessageSquare, Ban, Trash2, Mail, Phone, Video } from 'lucide-react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, MessageSquare, Ban, Trash2, Mail, Phone, Video, Info, ImageIcon, Calendar } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
-import LoadingOverlay from '../components/LoadingOverlay';
-import BlurImage from '../components/BlurImage';
+import Avatar from '../components/Avatar';
 import { useData } from '../context/DataContext';
 
 const UserProfile = () => {
     const { username } = useParams();
     const navigate = useNavigate();
-    const userId = useCurrentUserId();
+    const currentUserId = useCurrentUserId();
     const { showToast } = useToast();
-    const { profileData, refreshProfile } = useData();
+    const { profileData, refreshProfile, userPresence, contacts, setContacts } = useData();
+
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState(false);
-    const isMe = username === 'me' || username === profileData?.username;
-    const [profile, setProfile] = useState<any>(isMe ? profileData : null);
-    const [loading, setLoading] = useState(!profile);
-    const [actionLoading, setActionLoading] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState('');
+    const [isClearing, setIsClearing] = useState(false);
+
+    const isMe = username === 'me' || (profileData && username === profileData.username);
+    const location = useLocation();
+    const [profile, setProfile] = useState<any>(() => {
+        if (location.state?.profile) return location.state.profile;
+        if (isMe) return profileData;
+        // Fallback to contacts cache
+        return contacts.find(c => c.username === username);
+    });
+    const [loading, setLoading] = useState(() => {
+        if (location.state?.profile) return false;
+        if (isMe && profileData) return false;
+        if (contacts.find(c => c.username === username)) return false;
+        return true;
+    });
+    const [mediaCount, setMediaCount] = useState(0);
+
+    // Get Presence Info
+    const presenceInfo = useMemo(() => {
+        if (!profile?.id) return null;
+        const lastSeen = userPresence[profile.id];
+        if (!lastSeen) return null;
+
+        const isOnline = (Date.now() - new Date(lastSeen).getTime()) < 65000;
+        if (isOnline) return 'Online';
+
+        const date = new Date(lastSeen);
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        return isToday ? `Last seen today at ${timeStr}` : `Last seen ${date.toLocaleDateString()}`;
+    }, [userPresence, profile?.id]);
 
     useEffect(() => {
         const fetchUserProfile = async () => {
-            if (isMe) {
-                if (!profileData) setLoading(true);
-                try {
-                    const data = await refreshProfile();
-                    if (data && JSON.stringify(data) !== JSON.stringify(profile)) {
-                        setProfile(data);
-                    }
-                } catch (err) {
-                    console.error("Error refreshing own profile:", err);
-                } finally {
-                    setLoading(false);
-                }
-                return;
-            }
-
-            setLoading(true);
+            if (!profile) setLoading(true);
             try {
-                const { data: dataArr } = await insforge.database
-                    .from('profiles')
-                    .select('*')
-                    .eq('username', username);
+                if (isMe) {
+                    const data = await refreshProfile();
+                    if (data) setProfile(data);
+                } else {
+                    const { data, error } = await insforge.database
+                        .from('profiles')
+                        .select()
+                        .eq('username', username)
+                        .maybeSingle();
 
-                const data = dataArr?.[0];
+                    if (data) setProfile(data);
+                    if (error) throw error;
 
-                if (data) setProfile(data);
+                    // Fetch Media Count (messages with images or videos in this conversation)
+                    if (data && currentUserId) {
+                        const { count } = await insforge.database
+                            .from('messages')
+                            .select('*', { count: 'exact', head: true })
+                            .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${data.id},image_url.neq.null),and(sender_id.eq.${currentUserId},receiver_id.eq.${data.id},video_url.neq.null),and(sender_id.eq.${data.id},receiver_id.eq.${currentUserId},image_url.neq.null),and(sender_id.eq.${data.id},receiver_id.eq.${currentUserId},video_url.neq.null)`);
+                        setMediaCount(count || 0);
+                    }
+                }
             } catch (err) {
                 console.error("Error fetching user profile:", err);
+                showToast('Failed to load profile', 'error');
             } finally {
                 setLoading(false);
             }
         };
 
         fetchUserProfile();
-    }, [username, isMe, profileData, refreshProfile]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [username, isMe, currentUserId]);
+
+    // Listen for real-time contact updates
+    useEffect(() => {
+        if (!isMe && profile) {
+            const updatedContact = contacts.find(c => c.username === username);
+            if (updatedContact) {
+                setProfile((prev: any) => {
+                    const newProfile = { ...prev };
+                    let changed = false;
+
+                    if (updatedContact.name !== undefined && updatedContact.name !== prev.name) { newProfile.name = updatedContact.name; changed = true; }
+                    if (updatedContact.avatar !== undefined && updatedContact.avatar !== prev.avatar_url) { newProfile.avatar_url = updatedContact.avatar; changed = true; }
+                    if (updatedContact.lastSeen !== undefined && updatedContact.lastSeen !== prev.last_seen) { newProfile.last_seen = updatedContact.lastSeen; changed = true; }
+                    if (updatedContact.bio !== undefined && updatedContact.bio !== prev.bio) { newProfile.bio = updatedContact.bio; changed = true; }
+
+                    return changed ? newProfile : prev;
+                });
+            }
+        }
+        // Exclude profile from deps to prevent infinite loops, we use `prev` inside setState
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [contacts, username, isMe]);
 
     const handleBlockUser = async () => {
-        if (!userId || !profile) return;
-        setActionLoading(true);
-        setLoadingMessage('Blocking user...');
+        if (!currentUserId || !profile) return;
+
+        // Optimistic update
+        const previousContacts = [...contacts];
+        setContacts(prev => prev.filter(c => c.contact_id !== profile.id));
+        setShowBlockConfirm(false);
+
         try {
             const { error } = await insforge.database
                 .from('blocked_users')
-                .upsert({
-                    blocker_id: userId,
+                .insert([{
+                    blocker_id: currentUserId,
                     blocked_id: profile.id
-                });
+                }]);
 
             if (error) throw error;
-            showToast(`${profile.name || username} has been blocked`, 'error');
+            showToast(`${profile.name || profile.username} blocked`, 'error');
             navigate('/home');
-        } catch (err) {
+        } catch (err: any) {
+            console.error("Block user error:", err);
+            setContacts(previousContacts);
             showToast('Failed to block user', 'error');
+        }
+    };
+
+    const handleClearChat = async () => {
+        if (!currentUserId || !profile || isClearing) return;
+        setShowClearConfirm(false);
+        setIsClearing(true);
+
+        try {
+            const { error: err1 } = await insforge.database
+                .from('messages')
+                .delete()
+                .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${profile.id}),and(sender_id.eq.${profile.id},receiver_id.eq.${currentUserId})`);
+
+            if (err1) throw err1;
+
+            showToast('Chat history cleared', 'info');
+            navigate('/home');
+        } catch (err: any) {
+            console.error('Clear chat error:', err);
+            showToast('Failed to clear chat', 'error');
         } finally {
-            setActionLoading(false);
+            setIsClearing(false);
         }
     };
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--surface-color)', gap: '16px' }}>
-                <div className="spinner" style={{ width: 40, height: 40, borderWidth: 4 }} />
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading profile...</p>
+            <div className="profile-container premium-bg w-full h-[100dvh] flex items-center justify-center flex-col">
+                <div className="empty-state-container flex flex-col items-center">
+                    <div className="spinner" style={{ width: 42, height: 42, borderTopColor: 'var(--primary-color)' }} />
+                    <p style={{ marginTop: '16px', fontWeight: 700, color: 'var(--text-secondary)' }}>Loading Profile...</p>
+                </div>
             </div>
         );
     }
 
-    const user = profile || {
-        name: username || "Unknown User",
-        username: username || "unknown",
-        avatar_url: null,
-        bio: "Hey there! I am using Masum Chat.",
-        email: 'N/A',
-        created_at: new Date().toISOString()
-    };
+    if (!profile) {
+        return (
+            <div className="profile-container premium-bg w-full h-[100dvh] flex items-center justify-center flex-col px-6">
+                <div className="empty-state-container flex flex-col items-center text-center">
+                    <div className="empty-icon-box">
+                        <Info size={40} />
+                    </div>
+                    <h2 style={{ fontSize: '24px', fontWeight: 800, marginTop: '20px' }}>User Not Found</h2>
+                    <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>The user you are looking for does not exist or has changed their username.</p>
+                    <button className="premium-btn-primary" onClick={() => navigate(-1)} style={{ marginTop: '24px' }}>
+                        Go Back
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="profile-container" style={{ position: 'relative' }}>
-            {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
-            {loading && <LoadingOverlay transparent />}
-            {/* Header Nav */}
-            <div className="profile-nav">
-                <button className="nav-icon-btn" onClick={() => navigate(-1)}>
-                    <ArrowLeft size={24} />
-                </button>
-                <h3>Contact Info</h3>
+        <div className="profile-container w-full h-[100dvh] bg-surface-color flex flex-col relative overflow-hidden text-text-primary mx-auto max-w-md">
+            <style>{`
+                .profile-header-card {
+                    padding: 32px 24px 24px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    margin-bottom: 16px;
+                }
+                .presence-badge {
+                    margin-top: 8px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--primary-color);
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .presence-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: var(--primary-color);
+                    box-shadow: 0 0 8px var(--primary-color);
+                }
+                .action-fab-group {
+                    display: flex;
+                    justify-content: center;
+                    gap: 24px;
+                    margin-top: 24px;
+                }
+                .action-fab {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                }
+                .fab-icon {
+                    width: 52px;
+                    height: 52px;
+                    border-radius: 18px;
+                    background: var(--primary-light);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--primary-color);
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+                .action-fab:active .fab-icon { transform: scale(0.9); }
+                .fab-label {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--text-primary);
+                    letter-spacing: 0.2px;
+                }
+                .detail-section {
+                    padding: 0 16px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                }
+                .premium-field-card {
+                    background: var(--surface-color);
+                    border-radius: 20px;
+                    border: 1px solid var(--border-color);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+                    padding: 20px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+                .field-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    margin-bottom: 4px;
+                }
+                .field-label-wrapper {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    color: var(--primary-color);
+                    font-size: 13px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                .field-value {
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: var(--text-primary);
+                    word-break: break-word;
+                    line-height: 1.5;
+                }
+                .media-card {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 20px;
+                    cursor: pointer;
+                    background: var(--surface-color);
+                    border-radius: 20px;
+                    border: 1px solid var(--border-color);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+                }
+                .danger-section {
+                    margin-top: 16px;
+                    padding: 0 16px 40px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+                .danger-action-btn {
+                    width: 100%;
+                    padding: 16px;
+                    border-radius: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    font-size: 15px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    border: none;
+                    outline: none;
+                }
+                .danger-action-btn:active {
+                    transform: scale(0.98);
+                }
+                .btn-block {
+                    background: rgba(220, 53, 69, 0.1);
+                    color: #dc3545;
+                }
+                .btn-block:hover {
+                    background: rgba(220, 53, 69, 0.15);
+                }
+                .btn-clear {
+                    background: transparent;
+                    border: 1px solid rgba(220, 53, 69, 0.2);
+                    color: #dc3545;
+                }
+                .btn-clear:hover {
+                    background: rgba(220, 53, 69, 0.05);
+                }
+                .profile-content {
+                    flex: 1;
+                    overflow-y: auto;
+                }
+            `}</style>
+
+            <div className="profile-nav glass-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <span className="profile-nav-title">Contact Information</span>
+                </div>
             </div>
 
             <div className="profile-content">
-                {/* Profile Header */}
-                <div className="profile-header" style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ position: 'relative', margin: '0 auto', width: '120px', height: '120px', borderRadius: '50%', overflow: 'hidden' }} onClick={() => setIsPhotoPreviewOpen(true)}>
-                        <BlurImage
-                            src={user.avatar_url}
-                            alt={user.name}
-                            style={{ cursor: 'pointer', transition: 'transform 0.2s', width: '120px', height: '120px' }}
+                <div className="profile-header-card">
+                    <div style={{ position: 'relative' }} onClick={() => setIsPhotoPreviewOpen(true)}>
+                        <Avatar
+                            src={profile.avatar_url}
+                            name={profile.name || profile.username}
+                            size={120}
                         />
-                    </div>
-                    <div className="profile-main-info" style={{ marginTop: '16px' }}>
-                        <h2 style={{ fontSize: '22px', fontWeight: 800 }}>{user.name}</h2>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>@{user.username}</p>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-                            Joined {new Date(user.created_at).toLocaleDateString([], { month: 'long', year: 'numeric' })}
-                        </p>
+                        {presenceInfo === 'Online' && (
+                            <div style={{
+                                position: 'absolute', bottom: 6, right: 6,
+                                width: 24, height: 24, borderRadius: '50%',
+                                background: 'var(--surface-color)', padding: 4
+                            }}>
+                                <div className="presence-dot" style={{ width: '100%', height: '100%' }} />
+                            </div>
+                        )}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginTop: '16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => navigate(`/chat/${user.username}`)}>
-                            <div style={{ padding: '14px', background: 'var(--secondary-color)', color: 'var(--primary-color)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <MessageSquare size={24} />
-                            </div>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary-color)' }}>Message</span>
+                    <h2 style={{ marginTop: '16px', fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {profile.name || profile.username}
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '15px', marginTop: '2px' }}>
+                        @{profile.username}
+                    </p>
+
+                    {presenceInfo && (
+                        <div className="presence-badge" style={{ color: presenceInfo === 'Online' ? 'var(--primary-color)' : 'var(--text-secondary)' }}>
+                            {presenceInfo === 'Online' && <div className="presence-dot" />}
+                            {presenceInfo}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => navigate(`/call/${user.username}?type=voice`)}>
-                            <div style={{ padding: '14px', background: 'var(--secondary-color)', color: 'var(--primary-color)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Phone size={24} />
-                            </div>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary-color)' }}>Audio</span>
+                    )}
+
+                    <div className="action-fab-group">
+                        <div className="action-fab" onClick={() => navigate(`/chat/${profile.username}`, { state: { profile } })}>
+                            <div className="fab-icon ripple"><MessageSquare size={24} /></div>
+                            <span className="fab-label">Message</span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => navigate(`/call/${user.username}?type=video`)}>
-                            <div style={{ padding: '14px', background: 'var(--secondary-color)', color: 'var(--primary-color)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Video size={24} />
-                            </div>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary-color)' }}>Video</span>
+                        <div className="action-fab" onClick={() => navigate(`/call/${profile.username}?type=voice`)}>
+                            <div className="fab-icon ripple"><Phone size={24} /></div>
+                            <span className="fab-label">Audio</span>
+                        </div>
+                        <div className="action-fab" onClick={() => navigate(`/call/${profile.username}?type=video`)}>
+                            <div className="fab-icon ripple"><Video size={24} /></div>
+                            <span className="fab-label">Video</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Media Section */}
-                <div className="profile-section" style={{ padding: '16px 20px', borderBottom: '8px solid var(--secondary-color)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div className="detail-section">
+                    <div className="media-card ripple" onClick={() => navigate(`/media/${profile.username}`)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div className="terms-icon-box"><ImageIcon size={20} /></div>
+                            <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>Shared Media</span>
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--primary-color)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Media, links, and docs</span>
-                        </div>
-                        <div
-                            onClick={() => navigate(`/media/${user.username}`)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '14px', cursor: 'pointer' }}
-                        >
-                            <span>0</span>
-                            <ArrowLeft size={16} style={{ transform: 'rotate(180deg)' }} />
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{mediaCount} items</span>
+                            <ArrowLeft size={16} style={{ transform: 'rotate(180deg)', opacity: 0.5 }} />
                         </div>
                     </div>
-                    <div style={{ padding: '8px 0', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                        No media shared yet
-                    </div>
-                </div>
 
-                {/* Details */}
-                <div className="profile-section">
-                    <div className="profile-row">
-                        <div className="profile-row-label">About</div>
-                        <div className="profile-row-value">{user.bio || 'Hey there! I am using Masum Chat.'}</div>
-                    </div>
-
-                    <div className="profile-row">
-                        <div className="profile-row-label">Username</div>
-                        <div className="profile-row-value">@{user.username}</div>
-                        <Mail size={18} style={{ position: 'absolute', right: '28px', top: '50%', transform: 'translateY(-50%)', opacity: 0.3 }} />
-                    </div>
-                </div>
-
-                {/* Actions */}
-                <div className="profile-actions">
-                    <button
-                        className="btn-danger-outline"
-                        onClick={() => setShowBlockConfirm(true)}
-                    >
-                        <Ban size={20} /> Block {user.name}
-                    </button>
-                    <button
-                        className="btn-danger-outline"
-                        style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
-                        onClick={() => setShowClearConfirm(true)}
-                    >
-                        <Trash2 size={20} /> Clear Chat
-                    </button>
-                </div>
-
-                {/* Block Confirmation Modal */}
-                {showBlockConfirm && (
-                    <div className="overlay-backdrop" style={{ zIndex: 3000 }}>
-                        <div className="context-menu-card" style={{ padding: '24px', width: '85%', maxWidth: '340px', backgroundColor: 'var(--surface-color)' }}>
-                            <h3 style={{ marginBottom: '12px' }}>Block {user.name}?</h3>
-                            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '14px' }}>
-                                Blocked contacts will no longer be able to call you or send you messages.
-                            </p>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <button className="btn btn-outline" style={{ flex: 1, padding: '10px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }} onClick={() => setShowBlockConfirm(false)}>Cancel</button>
-                                <button className="btn btn-primary" style={{ flex: 1, padding: '10px', backgroundColor: '#dc3545', color: '#ffffff' }} onClick={handleBlockUser}>Block</button>
+                    <div className="premium-field-card">
+                        <div className="field-header">
+                            <div className="field-label-wrapper">
+                                <Info size={16} /> About
                             </div>
                         </div>
-                    </div>
-                )}
-
-                {/* Clear Chat Confirmation Modal */}
-                {showClearConfirm && (
-                    <div className="overlay-backdrop" style={{ zIndex: 3000 }}>
-                        <div className="context-menu-card" style={{ padding: '24px', width: '85%', maxWidth: '340px', backgroundColor: 'var(--surface-color)' }}>
-                            <h3 style={{ marginBottom: '12px' }}>Clear Chat?</h3>
-                            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '14px' }}>
-                                Are you sure you want to clear all messages in this chat? This cannot be undone.
-                            </p>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <button className="btn btn-outline" style={{ flex: 1, padding: '10px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }} onClick={() => setShowClearConfirm(false)}>Cancel</button>
-                                <button className="btn btn-primary" style={{ flex: 1, padding: '10px', backgroundColor: '#dc3545', color: '#ffffff' }} onClick={() => {
-                                    showToast('Chat cleared', 'info');
-                                    setShowClearConfirm(false);
-                                }}>Clear</button>
-                            </div>
+                        <div className="field-value">
+                            {profile.bio || "Hey there! I am using Masum Chat."}
                         </div>
                     </div>
-                )}
 
-                {/* Photo Preview Modal */}
-                {isPhotoPreviewOpen && (
-                    <div
-                        className="overlay-backdrop"
-                        style={{ zIndex: 4000, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        onClick={() => setIsPhotoPreviewOpen(false)}
-                    >
-                        <div style={{ position: 'relative', width: '100%', maxWidth: '400px', aspectRatio: '1/1' }}>
-                            <img
-                                src={user.avatar_url}
-                                alt={user.name}
-                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                            />
-                            <button
-                                style={{ position: 'absolute', top: '-40px', right: '10px', background: 'none', border: 'none', color: 'white', fontSize: '30px', cursor: 'pointer' }}
-                                onClick={() => setIsPhotoPreviewOpen(false)}
-                            >
-                                &times;
+                    <div className="premium-field-card">
+                        <div className="field-header">
+                            <div className="field-label-wrapper">
+                                <Calendar size={16} /> Joined
+                            </div>
+                        </div>
+                        <div className="field-value">
+                            {new Date(profile.created_at).toLocaleDateString([], { month: 'long', year: 'numeric' })}
+                        </div>
+                    </div>
+
+                    <div className="premium-field-card">
+                        <div className="field-header">
+                            <div className="field-label-wrapper">
+                                <Mail size={16} /> Identity
+                            </div>
+                        </div>
+                        <div className="field-value" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: 'var(--primary-color)', fontSize: '14px', fontWeight: 700 }}>Verified Account</span>
+                            </div>
+                            {profile.email && (
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500 }}>
+                                    {(() => {
+                                        const email = profile.email;
+                                        const [user, domain] = email.split('@');
+                                        if (user.length <= 2) return `${user[0]}***@${domain}`;
+                                        return `${user.substring(0, 2)}***${user.substring(user.length - 1)}@${domain}`;
+                                    })()}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="danger-section">
+                    <button className="danger-action-btn btn-block" onClick={() => setShowBlockConfirm(true)}>
+                        <Ban size={18} /> Block {profile.name || profile.username}
+                    </button>
+                    <button className="danger-action-btn btn-clear" onClick={() => setShowClearConfirm(true)} disabled={isClearing} style={{ opacity: isClearing ? 0.6 : 1 }}>
+                        <Trash2 size={18} /> {isClearing ? 'Clearing...' : 'Clear Chat History'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Block Confirmation Modal */}
+            {showBlockConfirm && (
+                <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowBlockConfirm(false)}>
+                    <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ban size={28} strokeWidth={2.5} />
+                        </div>
+                        <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Block {profile?.name || username}?</h3>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
+                            Blocked contacts will no longer be able to call you or send you messages. They won't be notified.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={handleBlockUser}>
+                                Block User
+                            </button>
+                            <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowBlockConfirm(false)}>
+                                Cancel
                             </button>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
+
+            {/* Clear Chat Confirmation Modal */}
+            {showClearConfirm && (
+                <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowClearConfirm(false)}>
+                    <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Trash2 size={28} strokeWidth={2.5} />
+                        </div>
+                        <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Clear Chat?</h3>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
+                            This will permanently delete all messages in this conversation. This action cannot be undone.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: '#f59e0b', color: 'white' }} onClick={handleClearChat} disabled={isClearing}>
+                                {isClearing ? 'Clearing...' : 'Clear History'}
+                            </button>
+                            <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowClearConfirm(false)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Photo Preview Modal */}
+            {isPhotoPreviewOpen && profile.avatar_url && (
+                <div
+                    className="overlay-backdrop"
+                    style={{ zIndex: 4000, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => setIsPhotoPreviewOpen(false)}
+                >
+                    <div style={{ position: 'relative', width: '90%', maxWidth: '500px', aspectRatio: '1/1', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                        <img
+                            src={profile.avatar_url}
+                            alt={profile.name}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '24px' }}
+                        />
+                        <div style={{ position: 'absolute', top: -60, left: 0, right: 0, textAlign: 'center', color: 'white' }}>
+                            <h4 style={{ fontSize: '18px', fontWeight: 700 }}>{profile.name || profile.username}</h4>
+                            <p style={{ opacity: 0.7, fontSize: '13px' }}>Profile Photo</p>
+                        </div>
+                    </div>
+                    <style>{`
+                        @keyframes scaleIn {
+                            from { opacity: 0; transform: scale(0.9); }
+                            to { opacity: 1; transform: scale(1); }
+                        }
+                    `}</style>
+                </div>
+            )}
         </div>
     );
 };

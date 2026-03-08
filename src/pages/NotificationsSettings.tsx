@@ -1,98 +1,65 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Monitor, Music, Check, Bell, MessageSquare, Volume2, Vibrate } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Check, RotateCcw, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
 import LoadingOverlay from '../components/LoadingOverlay';
+import { useData } from '../context/DataContext';
+import FloatingActionSheet from '../components/FloatingActionSheet';
 
 const NotificationsSettings = () => {
     const navigate = useNavigate();
     const userId = useCurrentUserId();
     const { showToast } = useToast();
-    const [loading, setLoading] = useState(true);
+    const { settings, setSettings, loading: globalLoading, executeSecurely } = useData();
     const [actionLoading, setActionLoading] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState('');
-
-    // Toggle States
-    const [messageNotifications, setMessageNotifications] = useState(true);
-    const [groupNotifications, setGroupNotifications] = useState(true);
-    const [reactNotifications, setReactNotifications] = useState(true);
-    const [previewMessages, setPreviewMessages] = useState(true);
-    const [vibration, setVibration] = useState(true);
-    const [sound, setSound] = useState(true);
-    const [highPriority, setHighPriority] = useState(true);
-    const [notificationSound, setNotificationSound] = useState('Masum Default');
-
-    // Modal State
     const [showSoundModal, setShowSoundModal] = useState(false);
-    const soundOptions = ['Masum Default', 'Simple Alert', 'Cheerful', 'Cyber Bell', 'Minimalist', 'Xylophone'];
 
-    useEffect(() => {
+    const handleUpdateSetting = async (key: string, value: any) => {
         if (!userId) return;
 
-        const fetchSettings = async () => {
-            setLoading(true);
-            try {
-                const { data, error } = await insforge.database
-                    .from('user_settings')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .single();
+        const previousValue = settings?.[key];
 
-                if (data) {
-                    setMessageNotifications(data.message_notifications !== false);
-                    setGroupNotifications(data.group_notifications !== false);
-                    setReactNotifications(data.react_notifications !== false);
-                    setPreviewMessages(data.preview_messages !== false);
-                    setVibration(data.vibration !== false);
-                    setSound(data.in_app_sound !== false);
-                    setHighPriority(data.high_priority_notifications !== false);
-                    setNotificationSound(data.notification_sound || 'Masum Default');
-                } else if (error) {
-                    // Create default settings if missing
-                    await insforge.database.from('user_settings').upsert({
-                        user_id: userId,
-                        message_notifications: true,
-                        group_notifications: true,
-                        react_notifications: true,
-                        preview_messages: true,
-                        vibration: true,
-                        in_app_sound: true,
-                        high_priority_notifications: true,
-                        notification_sound: 'Masum Default'
-                    });
-                }
-            } catch (err) {
-                console.error("Error fetching notification settings:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
+        // Optimistic Update
+        setSettings?.((prev: any) => ({ ...prev, [key]: value }));
 
-        fetchSettings();
-    }, [userId]);
-
-    const handleUpdateSetting = async (key: string, value: any, silent = false) => {
-        if (!userId) return;
-        if (!silent) {
-            setActionLoading(true);
-            setLoadingMessage('Updating...');
-        }
-        try {
-            await insforge.database
+        const result = await executeSecurely(async () => {
+            const { data: record, error: fetchErr } = await insforge.database
                 .from('user_settings')
-                .upsert({ user_id: userId, [key]: value });
-        } catch (err) {
-            console.error(`Error updating setting ${key}:`, err);
-        } finally {
-            if (!silent) setActionLoading(false);
+                .select()
+                .eq('user_id', userId)
+                .maybeSingle();
+
+            if (fetchErr) throw fetchErr;
+
+            if (record) {
+                const { error: updateErr } = await insforge.database
+                    .from('user_settings')
+                    .update({ [key]: value, updated_at: new Date().toISOString() })
+                    .eq('id', record.id);
+                if (updateErr) throw updateErr;
+            } else {
+                const { error: insertErr } = await insforge.database
+                    .from('user_settings')
+                    .insert([{ user_id: userId, [key]: value }]);
+                if (insertErr) throw insertErr;
+            }
+            return true;
+        }, `Failed to update ${key.replace(/_/g, ' ')}`);
+
+        // Rollback optimistic update if operation failed
+        if (result === undefined) {
+            setSettings?.((prev: any) => ({ ...prev, [key]: previousValue }));
         }
     };
 
     const handleBack = () => navigate(-1);
 
     const resetSettings = async () => {
+        if (!userId) return;
+
+        const previousSettings = { ...settings };
         const defaults = {
             message_notifications: true,
             group_notifications: true,
@@ -104,368 +71,328 @@ const NotificationsSettings = () => {
             notification_sound: 'Masum Default'
         };
 
-        if (userId) {
-            setActionLoading(true);
-            setLoadingMessage('Resetting...');
-            try {
-                await insforge.database.from('user_settings').upsert({ user_id: userId, ...defaults });
+        setActionLoading(true);
+        const result = await executeSecurely(async () => {
+            // Optimistic reset
+            setSettings?.({ ...settings, ...defaults });
 
-                setMessageNotifications(true);
-                setGroupNotifications(true);
-                setReactNotifications(true);
-                setPreviewMessages(true);
-                setVibration(true);
-                setSound(true);
-                setHighPriority(true);
-                setNotificationSound('Masum Default');
+            const { error: updateErr } = await insforge.database
+                .from('user_settings')
+                .update(defaults)
+                .eq('user_id', userId);
 
-                showToast('All notifications reset to default', 'info');
-            } catch (err) {
-                showToast('Failed to reset settings', 'error');
-            } finally {
-                setActionLoading(false);
-            }
+            if (updateErr) throw updateErr;
+
+            showToast('Notification settings reset to defaults', 'info');
+            return true;
+        }, 'Failed to reset settings');
+
+        if (result === undefined) {
+            setSettings?.(previousSettings);
         }
+        setActionLoading(false);
     };
 
-    if (loading && userId) {
+    if (globalLoading && userId && !settings) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--surface-color)', gap: '16px' }}>
-                <div className="spinner" style={{ width: 40, height: 40, borderWidth: 4 }} />
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading settings...</p>
+            <div className="premium-loader">
+                <Loader2 className="spinner" size={40} />
+                <p>Syncing preferences...</p>
             </div>
         );
     }
 
     return (
-        <div className="home-container" style={{ backgroundColor: 'var(--surface-color)' }}>
-            {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
-            {/* Header */}
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button className="nav-icon-btn" onClick={handleBack}>
+        <div className="profile-container premium-bg">
+            <style>{`
+                .settings-group {
+                    margin-bottom: 24px;
+                }
+                .settings-group-title {
+                    padding: 0 20px 12px;
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: var(--primary-color);
+                    text-transform: uppercase;
+                    letter-spacing: 1.5px;
+                    opacity: 0.8;
+                }
+                .settings-card {
+                    overflow: hidden;
+                    margin: 0 16px;
+                }
+                .privacy-toggle-item {
+                    padding: 16px 20px;
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                }
+                .toggle-title {
+                    font-weight: 700;
+                    color: var(--text-primary);
+                    font-size: 16px;
+                }
+                .toggle-desc {
+                    font-size: 13px;
+                    color: var(--text-secondary);
+                    font-weight: 500;
+                    line-height: 1.4;
+                    margin-top: 4px;
+                }
+                .privacy-toggle-divider {
+                    height: 1px;
+                    background: rgba(0,0,0,0.05);
+                    margin: 0 20px;
+                }
+                .premium-switch {
+                    width: 48px;
+                    height: 26px;
+                    border-radius: 100px;
+                    background: #e2e8f0;
+                    position: relative;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    flex-shrink: 0;
+                }
+                .premium-switch.active {
+                    background: var(--primary-color);
+                    box-shadow: 0 4px 12px rgba(0, 168, 132, 0.3);
+                }
+                .switch-knob {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background: white;
+                    position: absolute;
+                    top: 3px;
+                    left: 3px;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .premium-switch.active .switch-knob {
+                    left: 25px;
+                }
+                .sound-options-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+                .sound-option-item {
+                    display: flex;
+                    align-items: center;
+                    width: 100%;
+                    padding: 14px 16px;
+                    border: none;
+                    background: transparent;
+                    border-radius: 12px;
+                    gap: 16px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    text-align: left;
+                }
+                .sound-option-item:hover { background: rgba(0,0,0,0.02); }
+                .sound-option-item.active { background: var(--secondary-color); }
+                .radio-circle {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    border: 2px solid #cbd5e1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s;
+                }
+                .sound-option-item.active .radio-circle { border-color: var(--primary-color); }
+                .radio-dot {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    background: var(--primary-color);
+                    animation: scaleIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                }
+                @keyframes scaleIn {
+                    from { transform: scale(0); }
+                    to { transform: scale(1); }
+                }
+                .reset-btn {
+                    margin: 20px auto;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 12px 24px;
+                    border-radius: 100px;
+                    border: 1.5px solid #edf2f7;
+                    background: white;
+                    color: #e53e3e;
+                    font-weight: 700;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                }
+                .reset-btn:active { transform: scale(0.96); }
+            `}</style>
+
+            <div className="profile-nav glass-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={handleBack} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="top-nav-title">Notifications</div>
+                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Notifications</span>
                 </div>
-            </nav>
-
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '40px' }}>
-
-                {/* Section: Message Notifications */}
-                <SectionHeader title="Message Notifications" />
-
-                <NotificationToggle
-                    icon={<Bell size={20} />}
-                    title="Allow Notifications"
-                    subtitle="Show notifications for new messages"
-                    checked={messageNotifications}
-                    onChange={() => {
-                        const newVal = !messageNotifications;
-                        setMessageNotifications(newVal);
-                        handleUpdateSetting('message_notifications', newVal);
-                        showToast(`Notifications ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <NotificationRow
-                    icon={<Music size={20} />}
-                    title="Notification Sound"
-                    value={notificationSound}
-                    onClick={() => setShowSoundModal(true)}
-                />
-
-                <NotificationToggle
-                    icon={<Vibrate size={20} />}
-                    title="Vibration"
-                    subtitle="Vibrate on incoming messages"
-                    checked={vibration}
-                    onChange={() => {
-                        const newVal = !vibration;
-                        setVibration(newVal);
-                        handleUpdateSetting('vibration', newVal);
-                        showToast(`Vibration ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <div style={{ height: '8px', backgroundColor: 'var(--secondary-color)' }}></div>
-
-                {/* Section: Group Notifications */}
-                <SectionHeader title="Group & React Notifications" />
-
-                <NotificationToggle
-                    icon={<MessageSquare size={20} />}
-                    title="Group Notification"
-                    subtitle="Show notifications for group messages"
-                    checked={groupNotifications}
-                    onChange={() => {
-                        const newVal = !groupNotifications;
-                        setGroupNotifications(newVal);
-                        handleUpdateSetting('group_notifications', newVal);
-                        showToast(`Group notifications ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <NotificationToggle
-                    icon={<MessageSquare size={20} />}
-                    title="Reactions"
-                    subtitle="Show notifications for message reactions"
-                    checked={reactNotifications}
-                    onChange={() => {
-                        const newVal = !reactNotifications;
-                        setReactNotifications(newVal);
-                        handleUpdateSetting('react_notifications', newVal);
-                        showToast(`Reaction notifications ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <div style={{ height: '8px', backgroundColor: 'var(--secondary-color)' }}></div>
-
-                {/* Section: Advanced */}
-                <SectionHeader title="Advanced Settings" />
-
-                <NotificationToggle
-                    icon={<Monitor size={20} />}
-                    title="Show Previews"
-                    subtitle="Preview message text within notifications"
-                    checked={previewMessages}
-                    onChange={() => {
-                        const newVal = !previewMessages;
-                        setPreviewMessages(newVal);
-                        handleUpdateSetting('preview_messages', newVal);
-                        showToast(`Message previews ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <NotificationToggle
-                    icon={<Volume2 size={20} />}
-                    title="Sounds in App"
-                    subtitle="Play sounds for incoming and outgoing messages while using the app"
-                    checked={sound}
-                    onChange={() => {
-                        const newVal = !sound;
-                        setSound(newVal);
-                        handleUpdateSetting('in_app_sound', newVal);
-                        showToast(`In-app sounds ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }}
-                />
-
-                <div className="chat-item" style={{ padding: '16px 20px', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        backgroundColor: 'var(--secondary-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--primary-color)'
-                    }}>
-                        <Monitor size={20} />
-                    </div>
-                    <div style={{ flex: 1, marginLeft: '12px' }}>
-                        <div style={{ fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' }}>High Priority Notifications</div>
-                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Show previews of notifications at the top of the screen</div>
-                    </div>
-                    <Switch checked={highPriority} onChange={() => {
-                        const newVal = !highPriority;
-                        setHighPriority(newVal);
-                        handleUpdateSetting('high_priority_notifications', newVal);
-                        showToast(`High priority ${newVal ? 'enabled' : 'disabled'}`, 'success');
-                    }} />
-                </div>
-
-                <div style={{ padding: '30px 20px', textAlign: 'center' }}>
-                    <button
-                        onClick={resetSettings}
-                        className="btn"
-                        style={{
-                            background: 'var(--surface-color)',
-                            border: '1.5px solid var(--border-color)',
-                            padding: '12px 24px',
-                            borderRadius: '24px',
-                            color: 'var(--primary-color)',
-                            fontWeight: 700,
-                            fontSize: '14px',
-                            width: 'auto',
-                            margin: '0 auto'
-                        }}
-                    >
-                        Reset All Notification Settings
-                    </button>
-                </div>
-
             </div>
 
-            {/* Sound Selection Modal */}
-            {showSoundModal && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1000,
-                    padding: '20px'
-                }}>
-                    <div style={{
-                        backgroundColor: 'var(--surface-color)',
-                        borderRadius: '24px',
-                        width: '100%',
-                        maxWidth: '340px',
-                        overflow: 'hidden',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
-                    }}>
-                        <div style={{ padding: '24px 24px 16px 24px' }}>
-                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Notification Sound</div>
-                        </div>
-                        <div style={{ padding: '0 8px 16px 8px', maxHeight: '300px', overflowY: 'auto' }}>
-                            {soundOptions.map(option => (
-                                <div
-                                    key={option}
-                                    onClick={() => {
-                                        setNotificationSound(option);
-                                        setShowSoundModal(false);
-                                        handleUpdateSetting('notification_sound', option);
-                                        showToast(`Notification sound set to ${option}`, 'success');
-                                    }}
-                                    style={{
-                                        padding: '16px 16px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '12px',
-                                        cursor: 'pointer',
-                                        borderRadius: '12px',
-                                        backgroundColor: notificationSound === option ? 'var(--secondary-color)' : 'transparent',
-                                        margin: '0 8px'
-                                    }}
-                                >
-                                    <div style={{
-                                        width: '20px',
-                                        height: '20px',
-                                        borderRadius: '50%',
-                                        border: `2px solid ${notificationSound === option ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}>
-                                        {notificationSound === option && <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--primary-color)' }} />}
-                                    </div>
-                                    <span style={{
-                                        flex: 1,
-                                        fontWeight: notificationSound === option ? 600 : 500,
-                                        color: notificationSound === option ? 'var(--primary-color)' : 'var(--text-primary)'
-                                    }}>
-                                        {option}
-                                    </span>
-                                    {notificationSound === option && <Check size={18} color="var(--primary-color)" />}
+            <div className="profile-content" style={{ paddingBottom: '100px', paddingTop: '16px' }}>
+                <div className="max-w-content">
+                    {actionLoading && <LoadingOverlay message="Updating..." transparent />}
+
+                    <div className="settings-group">
+                        <div className="settings-group-title">Message Notifications</div>
+                        <div className="profile-glass-card settings-card">
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Alerts</div>
+                                    <div className="toggle-desc">Receive push notifications for private messages</div>
                                 </div>
-                            ))}
-                        </div>
-                        <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)' }}>
-                            <button
-                                onClick={() => setShowSoundModal(false)}
-                                style={{ color: 'var(--primary-color)', fontWeight: 600, background: 'none', border: 'none', fontSize: '15px', cursor: 'pointer' }}
+                                <Switch
+                                    checked={settings?.message_notifications !== false}
+                                    onChange={() => handleUpdateSetting('message_notifications', !settings?.message_notifications)}
+                                />
+                            </div>
+                            <div className="privacy-toggle-divider" />
+                            <div
+                                className="privacy-toggle-item ripple"
+                                onClick={() => setShowSoundModal(true)}
+                                style={{ cursor: 'pointer' }}
                             >
-                                Close
-                            </button>
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Sound</div>
+                                    <div className="toggle-desc" style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
+                                        {settings?.notification_sound || 'Masum Default'}
+                                    </div>
+                                </div>
+                                <ChevronRight size={18} color="rgba(0,0,0,0.2)" />
+                            </div>
+                            <div className="privacy-toggle-divider" />
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Vibration</div>
+                                    <div className="toggle-desc">Soft haptic feedback on incoming alerts</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.vibration !== false}
+                                    onChange={() => handleUpdateSetting('vibration', !settings?.vibration)}
+                                />
+                            </div>
                         </div>
                     </div>
+
+                    <div className="settings-group">
+                        <div className="settings-group-title">Social & Interaction</div>
+                        <div className="profile-glass-card settings-card">
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Groups</div>
+                                    <div className="toggle-desc">Notifications for group chat activity</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.group_notifications !== false}
+                                    onChange={() => handleUpdateSetting('group_notifications', !settings?.group_notifications)}
+                                />
+                            </div>
+                            <div className="privacy-toggle-divider" />
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Reactions</div>
+                                    <div className="toggle-desc">Alerts when someone reacts to your messages</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.react_notifications !== false}
+                                    onChange={() => handleUpdateSetting('react_notifications', !settings?.react_notifications)}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="settings-group">
+                        <div className="settings-group-title">Advanced Experience</div>
+                        <div className="profile-glass-card settings-card">
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">Previews</div>
+                                    <div className="toggle-desc">Show message text in banners</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.preview_messages !== false}
+                                    onChange={() => handleUpdateSetting('preview_messages', !settings?.preview_messages)}
+                                />
+                            </div>
+                            <div className="privacy-toggle-divider" />
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">In-App Sounds</div>
+                                    <div className="toggle-desc">Play subtle sounds while the app is active</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.in_app_sound !== false}
+                                    onChange={() => handleUpdateSetting('in_app_sound', !settings?.in_app_sound)}
+                                />
+                            </div>
+                            <div className="privacy-toggle-divider" />
+                            <div className="privacy-toggle-item">
+                                <div style={{ flex: 1 }}>
+                                    <div className="toggle-title">High Priority</div>
+                                    <div className="toggle-desc">Show heads-up banners for all notifications</div>
+                                </div>
+                                <Switch
+                                    checked={settings?.high_priority_notifications !== false}
+                                    onChange={() => handleUpdateSetting('high_priority_notifications', !settings?.high_priority_notifications)}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onClick={resetSettings} className="reset-btn ripple">
+                        <RotateCcw size={18} /> Reset All Notifications
+                    </button>
                 </div>
-            )}
+            </div>
+
+            <FloatingActionSheet
+                isOpen={showSoundModal}
+                onClose={() => setShowSoundModal(false)}
+                title="Notification Sound"
+            >
+                <div className="sound-options-list" style={{ padding: '10px 0' }}>
+                    {['Masum Default', 'Simple Alert', 'Cheerful', 'Cyber Bell', 'Minimalist', 'Xylophone'].map(option => (
+                        <button
+                            key={option}
+                            className={`sound-option-item ${settings?.notification_sound === option ? 'active' : ''}`}
+                            onClick={() => {
+                                handleUpdateSetting('notification_sound', option);
+                                setShowSoundModal(false);
+                            }}
+                        >
+                            <div className="radio-circle">
+                                {settings?.notification_sound === option && <div className="radio-dot" />}
+                            </div>
+                            <span style={{ flex: 1, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>{option}</span>
+                            {settings?.notification_sound === option && <Check size={18} color="var(--primary-color)" />}
+                        </button>
+                    ))}
+                </div>
+            </FloatingActionSheet>
         </div>
     );
 };
 
-const SectionHeader = ({ title }: { title: string }) => (
-    <div style={{
-        padding: '16px 20px 8px 20px',
-        fontSize: '13px',
-        fontWeight: 700,
-        color: 'var(--primary-color)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px'
-    }}>
-        {title}
-    </div>
-);
-
-const NotificationRow = ({ icon, title, value, onClick }: { icon: any, title: string, value: string, onClick?: () => void }) => (
-    <div onClick={onClick} className="chat-item" style={{ padding: '16px 20px', alignItems: 'center', borderBottom: '1px solid var(--border-color)', cursor: 'pointer' }}>
-        <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            backgroundColor: 'var(--secondary-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--primary-color)'
-        }}>
-            {icon}
-        </div>
-        <div style={{ flex: 1, marginLeft: '12px' }}>
-            <div style={{ fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' }}>{title}</div>
-            <div style={{ fontSize: '13px', color: 'var(--primary-color)', fontWeight: 500 }}>{value}</div>
-        </div>
-        <ChevronRight size={18} color="var(--border-color)" />
-    </div>
-);
-
-const NotificationToggle = ({ icon, title, subtitle, checked, onChange }: { icon: any, title: string, subtitle: string, checked: boolean, onChange: () => void }) => (
-    <div className="chat-item" style={{ padding: '16px 20px', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)' }}>
-        <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            backgroundColor: 'var(--secondary-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--primary-color)',
-            marginRight: '12px'
-        }}>
-            {icon}
-        </div>
-        <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' }}>{title}</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>{subtitle}</div>
-        </div>
-        <Switch checked={checked} onChange={onChange} />
-    </div>
-);
-
 const Switch = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => (
     <button
         onClick={onChange}
-        style={{
-            width: '44px',
-            height: '24px',
-            borderRadius: '12px',
-            backgroundColor: checked ? 'var(--primary-color)' : 'var(--border-color)',
-            position: 'relative',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'background-color 0.2s ease',
-            flexShrink: 0,
-            marginTop: '4px'
-        }}
+        className={`premium-switch ${checked ? 'active' : ''}`}
     >
-        <div style={{
-            width: '18px',
-            height: '18px',
-            borderRadius: '50%',
-            backgroundColor: '#ffffff',
-            position: 'absolute',
-            top: '3px',
-            left: checked ? '23px' : '3px',
-            transition: 'left 0.2s ease',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-        }} />
+        <div className="switch-knob" />
     </button>
 );
 

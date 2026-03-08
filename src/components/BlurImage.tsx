@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { getInitials, getHashColor } from '../lib/utils';
 
 interface BlurImageProps {
     src: string | null | undefined;
@@ -12,25 +13,11 @@ const BlurImage = ({ src, alt, className = '', style = {}, previewColor }: BlurI
     const [isLoaded, setIsLoaded] = useState(false);
     const [error, setError] = useState(false);
 
-    const initials = useMemo(() => {
-        if (!alt) return '?';
-        const parts = alt.trim().split(/\s+/);
-        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-        return (parts[0][0] + (parts[parts.length - 1][0] || '')).toUpperCase();
-    }, [alt]);
+    const initials = useMemo(() => getInitials(alt), [alt]);
 
     const backgroundColor = useMemo(() => {
         if (previewColor) return previewColor;
-        const colors = [
-            '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3',
-            '#FF3385', '#FF8F33', '#8A33FF', '#33A2FF', '#00a884'
-        ];
-        if (!alt) return '#ccc';
-        let hash = 0;
-        for (let i = 0; i < alt.length; i++) {
-            hash = alt.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        return colors[Math.abs(hash) % colors.length];
+        return getHashColor(alt);
     }, [alt, previewColor]);
 
     useEffect(() => {

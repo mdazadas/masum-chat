@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
     ArrowLeft,
-    Shield,
     Ban,
     Bell,
     Palette,
@@ -11,7 +11,9 @@ import {
     Trash2,
     ChevronRight,
     Key,
-    Info
+    Info,
+    User,
+    ShieldCheck
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { insforge } from '../lib/insforge';
@@ -38,7 +40,7 @@ const Settings = () => {
     }, [userId, globalProfile, refreshProfile]);
 
     const handleLogout = async () => {
-        setShowLogoutConfirm(false); // Close modal immediately
+        setShowLogoutConfirm(false);
         setActionLoading(true);
         setLoadingMessage('Logging out...');
         try {
@@ -60,16 +62,19 @@ const Settings = () => {
         try {
             setActionLoading(true);
             setLoadingMessage('Deleting account...');
-            const { error: profileError } = await insforge.database
+
+            const { error } = await insforge.database
                 .from('profiles')
-                .update({ deleted_at: new Date().toISOString(), bio: 'This account has been deleted' })
+                .update({
+                    deleted_at: new Date().toISOString(),
+                    bio: 'This account has been deleted'
+                })
                 .eq('id', userId);
 
-            if (profileError) throw profileError;
+            if (error) throw error;
 
             showToast('Account successfully deleted. You will be redirected...', 'success');
 
-            // Wait a bit for feedback
             setTimeout(async () => {
                 await insforge.auth.signOut();
                 localStorage.clear();
@@ -92,222 +97,318 @@ const Settings = () => {
     };
 
     return (
-        <div className="home-container" style={{ backgroundColor: 'var(--surface-color)' }}>
-            {/* Header - Unified with Home/Calls */}
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button
-                        className="nav-icon-btn"
-                        onClick={() => navigate('/home')}
-                    >
+        <div className="profile-container premium-bg">
+            <style>{`
+                .settings-group {
+                    margin-bottom: 24px;
+                }
+                .settings-group-title {
+                    padding: 0 20px 12px;
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: var(--primary-color);
+                    text-transform: uppercase;
+                    letter-spacing: 1.5px;
+                    opacity: 0.8;
+                }
+                .settings-card {
+                    overflow: hidden;
+                    margin: 0 16px;
+                }
+                .logout-btn-premium {
+                    margin: 24px auto 12px;
+                    max-width: 320px;
+                    width: 100%;
+                    background: rgba(220, 53, 69, 0.1);
+                    border: 1px solid rgba(220, 53, 69, 0.2);
+                    color: #dc3545;
+                    font-weight: 700;
+                    padding: 16px;
+                    border-radius: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    transition: all 0.2s;
+                }
+                .logout-btn-premium:active { transform: scale(0.98); background: rgba(220, 53, 69, 0.2); }
+                
+                .delete-btn-premium {
+                    margin: 0 auto 24px;
+                    max-width: 320px;
+                    width: 100%;
+                    background: transparent;
+                    color: #dc3545;
+                    font-size: 13px;
+                    font-weight: 600;
+                    padding: 12px;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    opacity: 0.7;
+                    transition: all 0.2s;
+                    border: 1px dashed rgba(220, 53, 69, 0.2);
+                }
+                .delete-btn-premium:active { opacity: 1; background: rgba(220, 53, 69, 0.05); }
+
+                .modal-premium {
+                    background: rgba(255, 255, 255, 0.9);
+                    backdrop-filter: blur(20px);
+                    border: 1px solid rgba(255, 255, 255, 0.4);
+                    border-radius: 28px;
+                    padding: 32px 24px;
+                    width: 90%;
+                    max-width: 360px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+                    text-align: center;
+                    animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                }
+                @keyframes modalIn {
+                    from { transform: scale(0.9) translateY(20px); opacity: 0; }
+                    to { transform: scale(1) translateY(0); opacity: 1; }
+                }
+            `}</style>
+
+            <div className="profile-nav glass-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="top-nav-title">Settings</div>
+                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Settings</span>
                 </div>
-            </nav>
+            </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', position: 'relative' }}>
-                {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
+            <div className="profile-content" style={{ paddingBottom: '100px' }}>
+                <div className="max-w-content">
+                    {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
 
-                {/* Profile Section - Consistent with MyProfile */}
-                <div
-                    onClick={() => navigate('/profile/me')}
-                    style={{
-                        padding: '24px 20px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '16px',
-                        borderBottom: '8px solid var(--secondary-color)',
-                        cursor: 'pointer'
-                    }}
-                >
-                    <Avatar
-                        src={userData.avatar_url}
-                        name={userData.name}
-                        size={64}
-                        style={{ border: '2px solid var(--border-color)' }}
-                    />
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>{userData.name}</div>
-                        <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>{userData.bio || 'Available'}</div>
-                    </div>
-                    <ChevronRight size={20} color="var(--text-secondary)" />
-                </div>
-
-                {/* Settings Groups */}
-                <div style={{ backgroundColor: 'var(--surface-color)' }}>
-                    {/* Security & Account */}
-                    <div style={{
-                        padding: '16px 20px 8px 20px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        color: 'var(--primary-color)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                    }}>
-                        Security & Account
-                    </div>
-                    <SettingRow
-                        icon={<Key size={20} />}
-                        title="Change Password"
-                        subtitle="Protect your account with a new password"
-                        onClick={() => navigate('/change-password')}
-                    />
-                    <SettingRow
-                        icon={<Shield size={20} />}
-                        title="Privacy & Status"
-                        subtitle="Manage visibility and active status"
-                        onClick={() => navigate('/privacy-status')}
-                    />
-                    <SettingRow
-                        icon={<Ban size={20} />}
-                        title="Blocked Contacts"
-                        subtitle="Manage blocked users list"
-                        onClick={() => navigate('/blocked-users')}
-                    />
-
-                    <div style={{ height: '8px', backgroundColor: 'var(--secondary-color)' }}></div>
-
-                    {/* Notifications & Display */}
-                    <div style={{
-                        padding: '16px 20px 8px 20px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        color: 'var(--primary-color)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                    }}>
-                        Notifications & Display
-                    </div>
-                    <SettingRow
-                        icon={<Bell size={20} />}
-                        title="Notifications"
-                        subtitle="Alerts, sounds & previews"
-                        onClick={() => navigate('/notifications-settings')}
-                    />
-                    <SettingRow
-                        icon={<Palette size={20} />}
-                        title="Theme & Appearance"
-                        subtitle="Dark mode and color options"
-                        onClick={() => navigate('/theme-appearance')}
-                    />
-
-                    <div style={{ height: '8px', backgroundColor: 'var(--secondary-color)' }}></div>
-
-                    {/* Support & Legal */}
-                    <div style={{
-                        padding: '16px 20px 8px 20px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        color: 'var(--primary-color)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                    }}>
-                        Information & Support
-                    </div>
-                    <SettingRow
-                        icon={<HelpCircle size={20} />}
-                        title="Help Center"
-                        subtitle="FAQs and contact info"
-                        onClick={() => navigate('/help-center')}
-                    />
-                    <SettingRow
-                        icon={<Info size={20} />}
-                        title="About Masum Chat"
-                        subtitle="Version, licensing and developer"
-                        onClick={() => navigate('/about')}
-                    />
-                </div>
-
-                {/* Account Actions */}
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <button
-                        onClick={() => setShowLogoutConfirm(true)}
-                        className="btn btn-outline"
-                        style={{
-                            color: '#dc3545',
-                            borderColor: '#dc3545',
-                            background: 'var(--surface-color)',
-                            padding: '12px',
-                            fontWeight: 600
-                        }}
+                    {/* Profile Preview Card */}
+                    <div
+                        className="profile-glass-card ripple"
+                        style={{ margin: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}
+                        onClick={() => navigate('/profile/me')}
                     >
-                        <LogOut size={18} /> Logout
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                            <Avatar
+                                src={userData.avatar_url}
+                                name={userData.name}
+                                size={64}
+                                style={{ border: '3px solid white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                            />
+                            <div style={{
+                                position: 'absolute', bottom: 0, right: 0,
+                                width: '22px', height: '22px', borderRadius: '50%',
+                                background: 'var(--primary-color)', border: '3px solid white',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white'
+                            }}>
+                                <User size={12} strokeWidth={3} />
+                            </div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                            <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{userData.name}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--primary-color)', fontWeight: 700, marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{userData.username}</div>
+                            <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {userData.bio || 'Available'}
+                            </div>
+                        </div>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: '40px', height: '40px', borderRadius: '50%',
+                            background: 'var(--primary-light)', color: 'var(--primary-color)', flexShrink: 0,
+                            boxShadow: '0 2px 8px rgba(0, 168, 132, 0.2)', transition: 'transform 0.2s'
+                        }}>
+                            <ChevronRight size={22} strokeWidth={2.5} />
+                        </div>
+                    </div>
+
+                    {/* Security & Account Group */}
+                    <div className="settings-group">
+                        <div className="settings-group-title">Security & Account</div>
+                        <div className="profile-glass-card settings-card">
+                            <SettingRow
+                                icon={<Key size={20} />}
+                                title="Change Password"
+                                subtitle="Update your security credentials"
+                                onClick={() => navigate('/change-password')}
+                            />
+                            <SettingRow
+                                icon={<ShieldCheck size={20} />}
+                                title="Privacy & Status"
+                                subtitle="Visibility and active status"
+                                onClick={() => navigate('/privacy-status')}
+                            />
+                            <SettingRow
+                                icon={<Ban size={20} />}
+                                title="Blocked Contacts"
+                                subtitle="Manage restricted users"
+                                onClick={() => navigate('/blocked-users')}
+                                isLast
+                            />
+                        </div>
+                    </div>
+
+                    {/* Notifications & Display Group */}
+                    <div className="settings-group">
+                        <div className="settings-group-title">Preferences</div>
+                        <div className="profile-glass-card settings-card">
+                            <SettingRow
+                                icon={<Bell size={20} />}
+                                title="Notifications"
+                                subtitle="Alerts, sounds & previews"
+                                onClick={() => navigate('/notifications-settings')}
+                            />
+                            <SettingRow
+                                icon={<Palette size={20} />}
+                                title="Theme & Appearance"
+                                subtitle="Dark mode and color options"
+                                onClick={() => navigate('/theme-appearance')}
+                                isLast
+                            />
+                        </div>
+                    </div>
+
+                    {/* Support & Legal Group */}
+                    <div className="settings-group">
+                        <div className="settings-group-title">Information & Support</div>
+                        <div className="profile-glass-card settings-card">
+                            <SettingRow
+                                icon={<HelpCircle size={20} />}
+                                title="Help Center"
+                                subtitle="FAQs and support info"
+                                onClick={() => navigate('/help-center')}
+                            />
+                            <SettingRow
+                                icon={<Info size={20} />}
+                                title="About Masum Chat"
+                                subtitle="Version, licensing & developer"
+                                onClick={() => navigate('/about')}
+                                isLast
+                            />
+                        </div>
+                    </div>
+
+                    {/* Account Actions */}
+                    <button className="logout-btn-premium ripple" onClick={() => setShowLogoutConfirm(true)}>
+                        <LogOut size={18} strokeWidth={2.5} /> Logout from Account
                     </button>
-                    <button
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="btn"
-                        style={{
-                            backgroundColor: 'var(--surface-color)',
-                            border: '1px solid var(--border-color)',
-                            color: '#dc3545',
-                            padding: '12px',
-                            fontWeight: 600
-                        }}
-                    >
-                        <Trash2 size={18} /> Delete Account Permanently
+                    <button className="delete-btn-premium ripple" onClick={() => setShowDeleteConfirm(true)}>
+                        <Trash2 size={16} /> Delete Account Permanently
                     </button>
                 </div>
             </div>
 
             {/* Logout Modal */}
-            {showLogoutConfirm && (
-                <div className="overlay-backdrop">
-                    <div className="context-menu-card" style={{ padding: '24px', width: '85%', maxWidth: '340px', backgroundColor: 'var(--surface-color)' }}>
-                        <h3 style={{ marginBottom: '12px' }}>Logout?</h3>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '14px' }}>Are you sure you want to logout from Masum Chat?</p>
+            {showLogoutConfirm && createPortal(
+                <div className="overlay-backdrop" style={{ zIndex: 3000, position: 'fixed', inset: 0, transform: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)' }} onClick={() => setShowLogoutConfirm(false)}>
+                    <div className="modal-premium" onClick={(e) => e.stopPropagation()}>
+                        <div className="empty-icon-box" style={{ margin: '0 auto 24px', background: 'rgba(220, 53, 69, 0.1)', color: '#dc3545' }}>
+                            <LogOut size={32} />
+                        </div>
+                        <h3 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '12px' }}>Logout?</h3>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', fontSize: '15px', fontWeight: 500, lineHeight: 1.5 }}>
+                            Are you sure you want to end your current session on Masum Chat?
+                        </p>
                         <div style={{ display: 'flex', gap: '12px' }}>
                             <button
-                                className="btn btn-outline"
-                                style={{ flex: 1, padding: '10px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    borderRadius: '16px',
+                                    fontWeight: 700,
+                                    fontSize: '15px',
+                                    backgroundColor: 'transparent',
+                                    border: '1.5px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer'
+                                }}
                                 onClick={() => setShowLogoutConfirm(false)}
                                 disabled={actionLoading}
                             >Cancel</button>
                             <button
-                                className="btn btn-primary"
-                                style={{ flex: 1, padding: '10px', backgroundColor: '#dc3545', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    borderRadius: '16px',
+                                    fontWeight: 700,
+                                    fontSize: '15px',
+                                    border: 'none',
+                                    backgroundColor: '#dc3545',
+                                    color: '#ffffff',
+                                    cursor: 'pointer'
+                                }}
                                 onClick={handleLogout}
                                 disabled={actionLoading}
                             >
-                                {actionLoading ? (
-                                    <>
-                                        <span style={{
-                                            display: 'inline-block', width: '16px', height: '16px',
-                                            border: '2px solid rgba(255,255,255,0.3)',
-                                            borderTopColor: '#ffffff',
-                                            borderRadius: '50%',
-                                            animation: 'spin 0.8s linear infinite'
-                                        }} />
-                                        Logging out...
-                                    </>
-                                ) : 'Logout'}
+                                {actionLoading ? 'Logging out...' : 'Logout'}
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Delete Modal */}
-            {showDeleteConfirm && (
-                <div className="overlay-backdrop">
-                    <div className="context-menu-card" style={{ padding: '24px', width: '85%', maxWidth: '340px', backgroundColor: 'var(--surface-color)' }}>
-                        <h3 style={{ marginBottom: '12px', color: '#dc3545' }}>Delete Account?</h3>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '14px' }}>
-                            This is permanent. Type your username <strong>{userData.username}</strong> to confirm.
+            {showDeleteConfirm && createPortal(
+                <div className="overlay-backdrop" style={{ zIndex: 3000, position: 'fixed', inset: 0, transform: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)' }} onClick={() => setShowDeleteConfirm(false)}>
+                    <div className="modal-premium" onClick={(e) => e.stopPropagation()}>
+                        <div className="empty-icon-box" style={{ margin: '0 auto 24px', background: 'rgba(220, 53, 69, 0.1)', color: '#dc3545' }}>
+                            <Trash2 size={32} />
+                        </div>
+                        <h3 style={{ fontSize: '22px', fontWeight: 800, color: '#dc3545', marginBottom: '12px' }}>Delete Account?</h3>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '15px', fontWeight: 500, lineHeight: 1.5 }}>
+                            This action is irreversible. To confirm, please type your username: <strong style={{ color: 'var(--text-primary)' }}>{userData.username}</strong>
                         </p>
                         <input
                             type="text"
-                            className="input-field"
                             placeholder="Enter username"
                             value={deleteUsername}
                             onChange={(e) => setDeleteUsername(e.target.value)}
-                            style={{ margin: 0, padding: '12px' }}
+                            style={{
+                                width: '100%',
+                                padding: '14px',
+                                borderRadius: '14px',
+                                border: '2px solid var(--border-color)',
+                                marginBottom: '24px',
+                                textAlign: 'center',
+                                outline: 'none',
+                                fontSize: '15px',
+                                fontWeight: 700,
+                                background: 'var(--background-color)',
+                                color: 'var(--text-primary)'
+                            }}
                         />
-                        <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                            <button className="btn btn-outline" style={{ flex: 1, padding: '10px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }} onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                        <div style={{ display: 'flex', gap: '12px' }}>
                             <button
-                                className="btn btn-primary"
-                                style={{ flex: 1, padding: '10px', backgroundColor: '#dc3545', color: '#ffffff', opacity: deleteUsername === userData.username ? 1 : 0.5 }}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    borderRadius: '16px',
+                                    fontWeight: 700,
+                                    fontSize: '15px',
+                                    backgroundColor: 'transparent',
+                                    border: '1.5px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => setShowDeleteConfirm(false)}
+                            >Cancel</button>
+                            <button
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    borderRadius: '16px',
+                                    fontWeight: 700,
+                                    fontSize: '15px',
+                                    border: 'none',
+                                    backgroundColor: '#dc3545',
+                                    color: '#ffffff',
+                                    cursor: deleteUsername === userData.username ? 'pointer' : 'not-allowed',
+                                    opacity: deleteUsername === userData.username ? 1 : 0.5,
+                                    boxShadow: deleteUsername === userData.username ? '0 8px 16px rgba(220, 53, 69, 0.25)' : 'none',
+                                    transition: 'all 0.2s'
+                                }}
                                 disabled={deleteUsername !== userData.username}
                                 onClick={handleDeleteAccount}
                             >
@@ -315,7 +416,8 @@ const Settings = () => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <BottomNav activeTab="settings" />
@@ -323,33 +425,37 @@ const Settings = () => {
     );
 };
 
-const SettingRow = ({ icon, title, subtitle, onClick }: { icon: any, title: string, subtitle: string, onClick?: () => void }) => (
+const SettingRow = ({ icon, title, subtitle, onClick, isLast }: { icon: any, title: string, subtitle: string, onClick?: () => void, isLast?: boolean }) => (
     <div
         onClick={onClick}
-        className="chat-item"
+        className="ripple"
         style={{
+            display: 'flex',
             alignItems: 'center',
-            padding: '12px 20px',
-            borderBottom: '1px solid var(--border-color)'
+            padding: '16px 20px',
+            borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.05)',
+            gap: '16px',
+            cursor: 'pointer'
         }}
     >
         <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
+            width: '42px',
+            height: '42px',
+            borderRadius: '12px',
             backgroundColor: 'var(--secondary-color)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--primary-color)'
+            color: 'var(--primary-color)',
+            flexShrink: 0
         }}>
             {icon}
         </div>
-        <div style={{ flex: 1, marginLeft: '4px' }}>
-            <div style={{ fontWeight: 600, fontSize: '16px', color: 'var(--text-primary)' }}>{title}</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{subtitle}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)', marginBottom: '2px' }}>{title}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>{subtitle}</div>
         </div>
-        <ChevronRight size={18} color="var(--border-color)" />
+        <ChevronRight size={18} color="rgba(0,0,0,0.2)" />
     </div>
 );
 

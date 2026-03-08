@@ -1,7 +1,8 @@
 import { ReactNode, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { insforge } from '../lib/insforge';
+import LoadingOverlay from './LoadingOverlay';
+
 
 interface ProtectedRouteProps {
     children: ReactNode;
@@ -19,7 +20,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     }, [authRestored, isLoggedIn, navigate]);
 
     if (!authRestored) {
-        return <div style={{ height: '100dvh', backgroundColor: 'var(--surface-color)' }} />;
+        return <LoadingOverlay message="Authenticating" />;
     }
 
     if (!isLoggedIn) {

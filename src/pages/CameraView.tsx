@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Zap, ZapOff, RefreshCw, Send, Image as ImageIcon } from 'lucide-react';
+import { X, Zap, ZapOff, RefreshCw, Send, Image as ImageIcon, Moon, Type, Trash2, Sparkles } from 'lucide-react';
 import { setPendingMedia } from '../pendingMediaStore';
 
 const CameraView = () => {
@@ -8,6 +8,9 @@ const CameraView = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const galleryInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const lightDetectorCanvasRef = useRef<HTMLCanvasElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const requestCountRef = useRef(0);
 
     // States
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -17,15 +20,125 @@ const CameraView = () => {
     const [isRecording, setIsRecording] = useState(false);
     const [permissionError, setPermissionError] = useState<string | null>(null);
     const [recordingTime, setRecordingTime] = useState(0); // seconds
+    const [isLowLight, setIsLowLight] = useState(false);
 
     // Preview States
-    const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video', capturedDuration?: number } | null>(null);
+    interface PreviewContent {
+        url: string;
+        type: 'image' | 'video';
+        capturedDuration?: number; // In seconds, for videos
+        file?: File | Blob;
+        autoEnhanced?: boolean;
+    }
+    const [previewMedia, setPreviewMedia] = useState<PreviewContent | null>(null);
+    const [caption, setCaption] = useState('');
+    const [isSending, setIsSending] = useState(false);
 
     // Custom video player state for preview
     const previewVideoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+
+    // Auto Light Detection Loop
+    useEffect(() => {
+        if (!stream || !videoRef.current) return;
+        const video = videoRef.current;
+        let canvas = lightDetectorCanvasRef.current;
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            (lightDetectorCanvasRef as any).current = canvas;
+        }
+
+        const detectLight = () => {
+            if (!video || !canvas) return;
+            // Only analyze if video is actively playing
+            if (video.readyState < 2) return;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+
+            try {
+                // Draw a downsampled frame to minimize CPU usage
+                ctx.drawImage(video, 0, 0, 64, 64);
+                const imageData = ctx.getImageData(0, 0, 64, 64).data;
+                let sumLuminance = 0;
+                let sampleCount = 0;
+
+                // Sample every 4th pixel for speed
+                for (let i = 0; i < imageData.length; i += 16) {
+                    const r = imageData[i];
+                    const g = imageData[i + 1];
+                    const b = imageData[i + 2];
+                    // Standard luminance formula
+                    sumLuminance += (0.299 * r + 0.587 * g + 0.114 * b);
+                    sampleCount++;
+                }
+
+                const avgLuminance = sumLuminance / sampleCount;
+
+                // Aggressive low light threshold (under ~100 out of 255 covers most indoor/dim lighting)
+                const DARKEN_THRESHOLD = 100;
+
+                if (avgLuminance < DARKEN_THRESHOLD && !isLowLight) {
+                    setIsLowLight(true);
+                    triggerLowLightConstraints(stream, true);
+                } else if (avgLuminance > DARKEN_THRESHOLD + 20 && isLowLight) {
+                    // Add hysteresis (+20) so it doesn't flicker
+                    setIsLowLight(false);
+                    triggerLowLightConstraints(stream, false);
+                }
+            } catch (err) { }
+        };
+
+        const intervalId = setInterval(detectLight, 1000);
+        return () => clearInterval(intervalId);
+    }, [stream, isLowLight]);
+
+    // Apply hardware constraints to brighten the feed
+    const triggerLowLightConstraints = async (activeStream: MediaStream, lowLightOn: boolean) => {
+        const videoTrack = activeStream.getVideoTracks()[0];
+        if (!videoTrack || !videoTrack.getCapabilities) return;
+
+        try {
+            const capabilities: any = videoTrack.getCapabilities();
+            const constraints: any = { advanced: [{}] };
+
+            if (lowLightOn) {
+                // Drop framerate to allow more light per frame
+                if (capabilities.frameRate) {
+                    videoTrack.applyConstraints({ frameRate: { ideal: 15 } }).catch(() => { });
+                }
+                // Try ImageCapture auto-enhancements if supported
+                if (capabilities.exposureMode?.includes('continuous')) {
+                    constraints.advanced[0].exposureMode = 'continuous';
+                }
+                if (capabilities.whiteBalanceMode?.includes('continuous')) {
+                    constraints.advanced[0].whiteBalanceMode = 'continuous';
+                }
+                if (capabilities.exposureCompensation) {
+                    constraints.advanced[0].exposureCompensation = capabilities.exposureCompensation.max;
+                }
+            } else {
+                // Restore normal framerate
+                if (capabilities.frameRate) {
+                    videoTrack.applyConstraints({ frameRate: { ideal: 30 } }).catch(() => { });
+                }
+                if (capabilities.exposureCompensation) {
+                    constraints.advanced[0].exposureCompensation = 0;
+                }
+            }
+
+            if (Object.keys(constraints.advanced[0]).length > 0) {
+                await videoTrack.applyConstraints(constraints);
+            }
+        } catch (err) {
+            console.warn("Could not apply low light constraints:", err);
+        }
+    };
+
 
     useEffect(() => {
         startCamera();
@@ -48,7 +161,15 @@ const CameraView = () => {
 
     const startCamera = async (retryWithVideoOnly = false) => {
         stopCamera();
+
+        const currentReq = ++requestCountRef.current;
+
+        // Wait for the hardware to fully release the previous camera track.
+        // This is strictly required on Android Chrome to prevent 'NotReadableError' when switching lenses.
+        await new Promise(resolve => setTimeout(resolve, 300));
+
         setPermissionError(null);
+        setIsLowLight(false);
         try {
             // Precise constraints for better compatibility
             const constraints: MediaStreamConstraints = {
@@ -56,20 +177,29 @@ const CameraView = () => {
                     facingMode: isFrontCamera ? 'user' : 'environment',
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
+                    // Removed initial advanced focus constraints as they crash front-facing cameras on many devices.
                 },
                 audio: retryWithVideoOnly ? false : true // Decouple audio if requested
             };
 
             const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-            if (videoRef.current) {
-                videoRef.current.srcObject = newStream;
-                // Ensure video plays and handles autoplay policies
-                try {
-                    await videoRef.current.play();
-                } catch (playErr) {
-                    console.warn("Autoplay was prevented, waiting for user interaction");
-                }
+
+            // If the user rapidly toggled the camera while we were waiting, abort immediately
+            if (!videoRef.current || currentReq !== requestCountRef.current) {
+                newStream.getTracks().forEach(t => t.stop());
+                return null;
             }
+
+            streamRef.current = newStream;
+            videoRef.current.srcObject = newStream;
+
+            // Ensure video plays and handles autoplay policies
+            try {
+                await videoRef.current.play();
+            } catch (playErr) {
+                console.warn("Autoplay was prevented, waiting for user interaction");
+            }
+
             setStream(newStream);
             return newStream;
         } catch (err: any) {
@@ -96,9 +226,18 @@ const CameraView = () => {
     };
 
     const stopCamera = () => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
+        const activeStream = streamRef.current || stream;
+        if (activeStream) {
+            // Reverting constraints right before track.stop() causes race conditions in WebRTC on some devices
+            // Just stop the tracks, the hardware reset will handle the rest natively.
+            activeStream.getTracks().forEach(track => {
+                track.stop();
+            });
             setStream(null);
+            streamRef.current = null;
+            if (videoRef.current) {
+                videoRef.current.srcObject = null;
+            }
         }
     };
 
@@ -115,35 +254,107 @@ const CameraView = () => {
         if (file) {
             const type = file.type.startsWith('video') ? 'video' : 'image';
             const url = URL.createObjectURL(file);
-            setPreviewMedia({ url, type });
+            setPreviewMedia({ url, type, file });
             stopCamera();
         }
     };
 
-    const takePhoto = () => {
+    const takePhoto = async () => {
         if (videoRef.current) {
-            const canvas = document.createElement('canvas');
             const video = videoRef.current;
+
+            // Safety Check: Ensure video is ready and has valid dimensions
+            if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+                console.warn("Camera not ready for capture yet.");
+                return;
+            }
+
             // Use organic video dimensions
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
+            const width = video.videoWidth;
+            const height = video.videoHeight;
+
+            // 1. Capture the raw, unmodified frame
+            const rawCanvas = document.createElement('canvas');
+            rawCanvas.width = width;
+            rawCanvas.height = height;
+            const rawCtx = rawCanvas.getContext('2d', { willReadFrequently: true });
+
+            if (rawCtx) {
                 if (isFrontCamera) {
-                    // Correct mirroring for front camera captures
-                    ctx.translate(canvas.width, 0);
-                    ctx.scale(-1, 1);
+                    rawCtx.translate(width, 0);
+                    rawCtx.scale(-1, 1);
                 }
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-                setPreviewMedia({ url: dataUrl, type: 'image' });
-                stopCamera();
+                rawCtx.drawImage(video, 0, 0, width, height);
+
+                // 2. Analyze the actual captured frame (skip every 4th pixel for speed)
+                const imageData = rawCtx.getImageData(0, 0, width, height).data;
+                let sumLuminance = 0;
+                let sampleCount = 0;
+
+                for (let i = 0; i < imageData.length; i += 16) {
+                    // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
+                    sumLuminance += (0.299 * imageData[i]) + (0.587 * imageData[i + 1]) + (0.114 * imageData[i + 2]);
+                    sampleCount++;
+                }
+
+                const avgLuminance = sumLuminance / sampleCount;
+                console.log(`Captured photo average luminance: ${avgLuminance.toFixed(2)} / 255`);
+
+                // 3. Apply Dynamic Enhancement if dark
+                // A bright office is ~150-200. A standard room is ~90-120. Dark is < 70.
+                if (avgLuminance < 110) {
+                    // Calculate dynamic multipliers. 
+                    // The darker it is, the stronger the multiplier, but capped to avoid white-out.
+                    // E.g., if avgLuminance is 55, ratio is 110/55 = 2.0. We cap brightness boost to max 1.6x
+                    const brightnessRatio = Math.min(1.6, Math.max(1.1, 110 / Math.max(avgLuminance, 20)));
+
+                    // Contrast boost gets slightly higher the darker it is to combat washed out grey shadows
+                    const contrastBoost = Math.min(1.3, 1.05 + ((110 - avgLuminance) * 0.003));
+
+                    // Slight saturation boost to restore color lost in darkness
+                    const saturationBoost = 1.15;
+
+                    console.log(`Applying enhancement: brightness(${brightnessRatio.toFixed(2)}) contrast(${contrastBoost.toFixed(2)})`);
+
+                    // Create a secondary canvas for the final processed image
+                    const finalCanvas = document.createElement('canvas');
+                    finalCanvas.width = width;
+                    finalCanvas.height = height;
+                    const finalCtx = finalCanvas.getContext('2d');
+
+                    if (finalCtx) {
+                        // Apply the calculated hardware filters natively to the rendering context
+                        finalCtx.filter = `brightness(${brightnessRatio}) contrast(${contrastBoost}) saturate(${saturationBoost})`;
+                        // Draw the raw image *through* the filter onto the final canvas
+                        finalCtx.drawImage(rawCanvas, 0, 0);
+
+                        // Output the enhanced blob
+                        finalCanvas.toBlob((blob) => {
+                            if (blob) {
+                                const url = URL.createObjectURL(blob);
+                                setPreviewMedia({ url, type: 'image', file: blob, autoEnhanced: true });
+                                stopCamera();
+                            }
+                        }, 'image/jpeg', 0.95);
+                        return; // Exit early since we handled the enhanced path
+                    }
+                }
+
+                // 4. Output the raw blob if no enhancement was needed (or if finalCtx failed)
+                rawCanvas.toBlob((blob) => {
+                    if (blob) {
+                        const url = URL.createObjectURL(blob);
+                        setPreviewMedia({ url, type: 'image', file: blob, autoEnhanced: false });
+                        stopCamera();
+                    }
+                }, 'image/jpeg', 0.92);
             }
         }
     };
 
     const startRecording = (activeStream: MediaStream) => {
         const localChunks: Blob[] = [];
+        const startTimeMs = Date.now();
 
         // Supported mimeTypes (trying most compatible first)
         const types = [
@@ -167,12 +378,13 @@ const CameraView = () => {
             };
 
             recorder.onstop = () => {
-                const finalTime = recordingTime; // Capture the current state ref
-                console.log("Recorder stopped, finalTime:", finalTime);
+                // Calculate precise duration to avoid React state stale closures
+                const finalTimeSec = (Date.now() - startTimeMs) / 1000;
+                console.log("Recorder stopped, finalTime:", finalTimeSec);
                 if (localChunks.length > 0) {
                     const blob = new Blob(localChunks, { type: mimeType || 'video/webm' });
                     const url = URL.createObjectURL(blob);
-                    setPreviewMedia({ url, type: 'video', capturedDuration: finalTime });
+                    setPreviewMedia({ url, type: 'video', capturedDuration: finalTimeSec, file: blob });
                     stopCamera();
                 }
             };
@@ -223,12 +435,15 @@ const CameraView = () => {
     };
 
     const sendMedia = () => {
-        if (!previewMedia) { navigate(-1); return; }
+        if (!previewMedia || isSending) { navigate(-1); return; }
+        setIsSending(true);
         // Store in-memory (avoids localStorage 5MB limit for videos)
         setPendingMedia({
             url: previewMedia.url,
             type: previewMedia.type,
-            timestamp: Date.now()
+            caption: caption.trim() || undefined,
+            timestamp: Date.now(),
+            file: previewMedia.file // Pass the raw Blob/File to avoid failing blob URL fetches across components
         });
         navigate(-1);
     };
@@ -238,6 +453,7 @@ const CameraView = () => {
             URL.revokeObjectURL(previewMedia.url);
         }
         setPreviewMedia(null);
+        setCaption('');
         startCamera();
     };
 
@@ -276,6 +492,12 @@ const CameraView = () => {
                 {/* Content - Media in a frame */}
                 <div className="preview-content">
                     <div className="media-frame">
+                        {previewMedia.autoEnhanced && (
+                            <div className="auto-enhanced-badge fade-in">
+                                <Sparkles size={14} color="#ffd700" fill="#ffd700" />
+                                <span>Auto-Enhanced</span>
+                            </div>
+                        )}
                         {previewMedia.type === 'image' ? (
                             <img src={previewMedia.url} alt="Captured" className="framed-media" />
                         ) : (
@@ -342,22 +564,35 @@ const CameraView = () => {
                     </div>
                 </div>
 
-                {/* WhatsApp Style Bottom Actions Bar */}
-                <div className="preview-actions-bar">
-                    <button className="retake-action" onClick={discardPreview}>
-                        <div className="retake-icon">↺</div>
-                        <span>Retake</span>
-                    </button>
-
-                    <div className="caption-box">
-                        <input type="text" placeholder="Add a caption..." className="caption-input" readOnly />
+                {/* Send Controls - Fixed at bottom */}
+                <div className="send-controls-container">
+                    {/* Caption input similar to WhatsApp */}
+                    <div className="caption-input-wrapper">
+                        <Type size={20} color="#fff" style={{ opacity: 0.7 }} />
+                        <input
+                            type="text"
+                            placeholder="Add a caption..."
+                            value={caption}
+                            onChange={(e) => setCaption(e.target.value)}
+                            className="caption-input"
+                            onKeyPress={(e) => e.key === 'Enter' && sendMedia()}
+                        />
                     </div>
 
-                    <button className="send-fab" onClick={sendMedia}>
-                        <Send size={24} color="white" />
-                    </button>
-                </div>
+                    <div className="send-action-row">
+                        <button className="preview-action-btn delete-btn" onClick={discardPreview}>
+                            <Trash2 size={24} color="#ff3b30" />
+                        </button>
 
+                        <button className="preview-action-btn send-btn" onClick={sendMedia} disabled={isSending}>
+                            {isSending ? (
+                                <div className="mini-spinner" style={{ width: 20, height: 20, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                            ) : (
+                                <Send size={24} color="#fff" style={{ marginLeft: '2px' }} />
+                            )}
+                        </button>
+                    </div>
+                </div>
                 {/* Bottom area is now dedicated to video controls or empty for images */}
 
                 <style>{`
@@ -371,6 +606,79 @@ const CameraView = () => {
                         display: flex;
                         flex-direction: column;
                     }
+                   /* Preview UI Reset */
+                .send-controls-container {
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    padding: 12px 12px max(24px, env(safe-area-inset-bottom));
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    width: 100%;
+                    box-sizing: border-box;
+                    background: rgba(0, 0, 0, 0.7);
+                    backdrop-filter: blur(10px);
+                    z-index: 20;
+                }
+
+                .caption-input-wrapper {
+                    flex: 1;
+                    min-width: 0;
+                    display: flex;
+                    align-items: center;
+                    background: rgba(255, 255, 255, 0.15);
+                    border-radius: 24px;
+                    padding: 10px 14px;
+                }
+
+                .caption-input {
+                    flex: 1;
+                    min-width: 0;
+                    background: transparent;
+                    border: none;
+                    color: white;
+                    font-size: 15px;
+                    outline: none;
+                    margin-left: 8px;
+                }
+
+                .caption-input::placeholder {
+                    color: rgba(255, 255, 255, 0.6);
+                }
+
+                .send-action-row {
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    flex-shrink: 0;
+                }
+                
+                .preview-action-btn {
+                    width: 48px;
+                    height: 48px;
+                    flex-shrink: 0;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: none;
+                    cursor: pointer;
+                    transition: transform 0.2s, background 0.2s;
+                }
+                
+                .preview-action-btn:active {
+                    transform: scale(0.9);
+                }
+                
+                .delete-btn {
+                    background: rgba(255, 59, 48, 0.2);
+                }
+                
+                .send-btn {
+                    background: #25D366;
+                }
                     .preview-header {
                         position: absolute;
                         top: 0; left: 0; right: 0;
@@ -424,77 +732,6 @@ const CameraView = () => {
                         height: 100%;
                         display: flex;
                         flex-direction: column;
-                    }
-                    .preview-actions-bar {
-                        position: absolute;
-                        bottom: 0; left: 0; right: 0;
-                        padding: 16px;
-                        padding-bottom: max(24px, env(safe-area-inset-bottom));
-                        display: flex;
-                        align-items: center;
-                        gap: 12px;
-                        background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-                        z-index: 20;
-                    }
-                    .retake-action {
-                        background: none;
-                        border: none;
-                        color: white;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        gap: 2px;
-                        cursor: pointer;
-                        min-width: 60px;
-                        transition: opacity 0.2s;
-                    }
-                    .retake-action:active { opacity: 0.6; }
-                    .retake-icon {
-                        font-size: 26px;
-                        line-height: 1;
-                    }
-                    .retake-action span {
-                        font-size: 11px;
-                        text-transform: uppercase;
-                        letter-spacing: 0.8px;
-                        font-weight: 600;
-                        opacity: 0.9;
-                    }
-                    .caption-box {
-                        flex: 1;
-                        background: rgba(45,45,45,0.85);
-                        backdrop-filter: blur(15px);
-                        border-radius: 26px;
-                        padding: 12px 18px;
-                        border: 1px solid rgba(255,255,255,0.08);
-                        display: flex;
-                        align-items: center;
-                    }
-                    .caption-input {
-                        width: 100%;
-                        background: none;
-                        border: none;
-                        color: white;
-                        font-size: 15px;
-                        outline: none;
-                        font-family: inherit;
-                    }
-                    .caption-input::placeholder {
-                        color: rgba(255,255,255,0.4);
-                    }
-                    .send-fab {
-                        width: 56px; height: 56px;
-                        background: #00a884;
-                        border: none;
-                        border-radius: 50%;
-                        display: flex; align-items: center; justify-content: center;
-                        box-shadow: 0 4px 16px rgba(0,168,132,0.4);
-                        cursor: pointer;
-                        transition: transform 0.1s, background-color 0.2s;
-                    }
-                    .send-fab:active {
-                        transform: scale(0.9);
-                        background-color: #008f70;
                     }
                     .custom-video-controls {
                         position: absolute;
@@ -563,11 +800,18 @@ const CameraView = () => {
                 <button className="cam-control-btn" onClick={() => navigate(-1)}>
                     <X size={28} />
                 </button>
-                {mode === 'photo' && !isRecording && (
-                    <button className="cam-control-btn" onClick={() => setFlashOn(!flashOn)}>
-                        {flashOn ? <Zap size={24} color="#ffd700" /> : <ZapOff size={24} />}
-                    </button>
-                )}
+                <div style={{ display: 'flex', gap: '15px' }}>
+                    {isLowLight && (
+                        <div className="night-mode-indicator fade-in">
+                            <Moon size={20} color="#ffd700" fill="#ffd700" />
+                        </div>
+                    )}
+                    {mode === 'photo' && !isRecording && (
+                        <button className="cam-control-btn" onClick={() => setFlashOn(!flashOn)}>
+                            {flashOn ? <Zap size={24} color="#ffd700" /> : <ZapOff size={24} />}
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Camera Preview */}
@@ -593,6 +837,7 @@ const CameraView = () => {
                         autoPlay
                         playsInline
                         muted
+                        className={isLowLight ? 'low-light-video' : ''}
                         style={{ transform: isFrontCamera ? 'scaleX(-1)' : 'none' }}
                     />
                 )}
@@ -629,7 +874,7 @@ const CameraView = () => {
                 </div>
 
                 <div className="main-controls">
-                    <button className="cam-secondary-btn" onClick={handleGalleryClick}>
+                    <button className="cam-secondary-btn" onClick={handleGalleryClick} title="Gallery">
                         <div className="gallery-preview-stub">
                             <ImageIcon size={20} color="white" />
                         </div>
@@ -638,11 +883,12 @@ const CameraView = () => {
                     <button
                         className={`capture-trigger ${mode === 'video' ? 'video-mode' : ''} ${isRecording ? 'recording' : ''}`}
                         onClick={captureAction}
+                        title={isRecording ? "Stop recording" : (mode === 'video' ? "Start recording" : "Take photo")}
                     >
                         <div className="inner-circle"></div>
                     </button>
 
-                    <button className="cam-secondary-btn" onClick={toggleCamera}>
+                    <button className="cam-secondary-btn" onClick={toggleCamera} title="Switch camera">
                         <RefreshCw size={28} />
                     </button>
                 </div>
@@ -773,6 +1019,57 @@ const CameraView = () => {
                 .capture-trigger.recording .inner-circle { transform: scale(0.5); border-radius: 4px; }
 
                 .footer-hint { color: rgba(255,255,255,0.5); font-size: 12px; }
+                
+                .night-mode-indicator {
+                    background: rgba(0,0,0,0.5);
+                    backdrop-filter: blur(10px);
+                    padding: 8px 12px;
+                    border-radius: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: 1px solid rgba(255,215,0,0.3);
+                }
+                
+                .fade-in {
+                    animation: fadeInNight 0.4s ease-out;
+                }
+                
+                @keyframes fadeInNight {
+                    from { opacity: 0; transform: translateY(-5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                
+                .low-light-video {
+                    /* Software night brightness enhancement for viewfinder */
+                    filter: brightness(1.25) contrast(1.15) saturate(1.1);
+                    transition: filter 0.5s ease;
+                }
+                
+                /* Auto-Enhanced Badge */
+                .auto-enhanced-badge {
+                    position: absolute;
+                    top: 15px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(0,0,0,0.6);
+                    backdrop-filter: blur(8px);
+                    padding: 6px 14px;
+                    border-radius: 20px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    z-index: 50;
+                    border: 1px solid rgba(255,215,0,0.4);
+                }
+                
+                .auto-enhanced-badge span {
+                    color: #fff;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    text-transform: uppercase;
+                }
             `}</style>
         </div>
     );

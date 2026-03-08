@@ -14,31 +14,40 @@ const LoadingOverlay = ({ message = 'Loading...', transparent = false }: Loading
             width: '100%',
             height: '100%',
             backgroundColor: transparent ? 'transparent' : 'var(--surface-color)',
+            backdropFilter: transparent ? 'none' : 'blur(4px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1000,
-            gap: '16px'
+            gap: '20px'
         }}>
             <div className="spinner" style={{
-                width: 48,
-                height: 48,
-                borderWidth: 4,
-                borderColor: 'var(--secondary-color)',
-                borderTopColor: 'var(--primary-color)'
+                width: 44,
+                height: 44,
+                borderWidth: 3,
+                borderColor: 'var(--primary-glow)',
+                borderTopColor: 'var(--primary-color)',
+                boxShadow: '0 0 15px var(--primary-glow)'
             }} />
             {message && (
                 <p style={{
-                    fontSize: '15px',
+                    fontSize: '14px',
                     fontWeight: 600,
                     color: 'var(--text-secondary)',
-                    letterSpacing: '0.3px',
-                    animation: 'pulse 2s infinite'
+                    letterSpacing: '0.4px',
+                    textTransform: 'uppercase',
+                    animation: 'loading-pulse 1.8s ease-in-out infinite'
                 }}>
                     {message}
                 </p>
             )}
+            <style>{`
+                @keyframes loading-pulse {
+                    0%, 100% { opacity: 0.4; transform: scale(0.98); }
+                    50% { opacity: 1; transform: scale(1); }
+                }
+            `}</style>
         </div>
     );
 };

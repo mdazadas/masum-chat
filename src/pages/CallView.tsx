@@ -1,351 +1,328 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2, VolumeX, Phone, PhoneIncoming, PhoneMissed, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams, Navigate } from 'react-router-dom';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, Volume2, VolumeX } from 'lucide-react';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
 import Avatar from '../components/Avatar';
+import { useData } from '../context/DataContext';
+import { useToast } from '../context/ToastContext';
 
-// ─── Call History Screen ──────────────────────────────────────────────
-const CallHistoryView = () => {
-    const navigate = useNavigate();
-    const userId = useCurrentUserId();
-    const [history, setHistory] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (!userId) return;
-        const fetchHistory = async () => {
-            try {
-                const { data } = await insforge.database
-                    .from('calls')
-                    .select('*, profiles!calls_caller_id_fkey(name, avatar_url), profiles!calls_receiver_id_fkey(name, avatar_url)')
-                    .or(`caller_id.eq.${userId},receiver_id.eq.${userId}`)
-                    .order('created_at', { ascending: false });
-
-                if (data) {
-                    const mapped = data.map((c: any) => {
-                        const isCaller = c.caller_id === userId;
-                        const peer = isCaller ? c.profiles_calls_receiver_id_fkey : c.profiles_calls_caller_id_fkey;
-                        const type = c.status === 'missed' ? 'missed' : (isCaller ? 'outgoing' : 'incoming');
-
-                        return {
-                            id: c.id,
-                            name: peer?.name || 'Unknown',
-                            type,
-                            callType: c.type || 'voice',
-                            time: new Date(c.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-                            duration: c.duration || '',
-                            avatar: peer?.avatar_url || null
-                        };
-                    });
-                    setHistory(mapped);
-                }
-            } catch (err) {
-                console.error('Call history error:', err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchHistory();
-    }, [userId]);
-
-    const getTileIcon = (type: string) => {
-        if (type === 'missed') return <PhoneMissed size={14} />;
-        if (type === 'incoming') return <PhoneIncoming size={14} />;
-        return <Phone size={14} />;
-    };
-    const getTileColor = (type: string) => type === 'missed' ? '#ef4444' : type === 'incoming' ? '#22c55e' : '#3b82f6';
-
-    return (
-        <div className="callhist-screen">
-            <nav className="callhist-nav">
-                <button className="callhist-back" onClick={() => navigate(-1)}>
-                    <ArrowLeft size={22} />
-                </button>
-                <span className="callhist-title">Recent Calls</span>
-            </nav>
-
-            <div className="callhist-list">
-                {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', gap: '16px' }}>
-                        <div className="spinner" style={{ width: 40, height: 40, borderWidth: 4 }} />
-                        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading calls...</p>
-                    </div>
-                ) :
-                    history.length > 0 ? history.map(call => (
-                        <div key={call.id} className="callhist-row">
-                            {/* Avatar */}
-                            <div className="callhist-avatar-wrap">
-                                <Avatar
-                                    src={call.avatar}
-                                    name={call.name}
-                                    size={50}
-                                    className="callhist-avatar"
-                                />
-                                <span className="callhist-type-dot" style={{ background: getTileColor(call.type) }}>
-                                    {getTileIcon(call.type)}
-                                </span>
-                            </div>
-
-                            {/* Info */}
-                            <div className="callhist-info" onClick={() => navigate(`/chat/${call.name?.toLowerCase().replace(/\s+/g, '.')}`)}>
-                                <span className="callhist-name">{call.name}</span>
-                                <span className="callhist-meta" style={{ color: getTileColor(call.type) }}>
-                                    {call.callType === 'video' ? '📹 Video' : '📞 Voice'} · {call.type}
-                                    {call.duration ? ` · ${call.duration}` : ''}
-                                </span>
-                                <span className="callhist-time">{call.time}</span>
-                            </div>
-
-                            {/* Action buttons */}
-                            <div className="callhist-actions">
-                                <button
-                                    className="callhist-action-btn voice"
-                                    title="Voice call"
-                                    onClick={() => navigate(`/call/${call.name?.toLowerCase().replace(/\s+/g, '.')}?type=voice`)}
-                                >
-                                    <Phone size={18} />
-                                </button>
-                                <button
-                                    className="callhist-action-btn video"
-                                    title="Video call"
-                                    onClick={() => navigate(`/call/${call.name?.toLowerCase().replace(/\s+/g, '.')}?type=video`)}
-                                >
-                                    <Video size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    )) : (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No recent calls</div>
-                    )}
-            </div>
-
-            <style>{`
-                .callhist-screen {
-                    min-height: 100dvh;
-                    background: var(--bg-primary, #fff);
-                    display: flex;
-                    flex-direction: column;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                }
-                .callhist-nav {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    padding: 14px 16px;
-                    border-bottom: 1px solid var(--border-color, #eee);
-                    background: var(--bg-primary, #fff);
-                    position: sticky;
-                    top: 0;
-                    z-index: 10;
-                }
-                .callhist-back {
-                    background: none;
-                    border: none;
-                    padding: 6px;
-                    cursor: pointer;
-                    color: var(--text-secondary, #666);
-                    display: flex;
-                    border-radius: 50%;
-                }
-                .callhist-back:active { background: var(--bg-secondary, #f5f5f5); }
-                .callhist-title {
-                    font-size: 18px;
-                    font-weight: 700;
-                    color: var(--text-primary, #111);
-                }
-                .callhist-list { flex: 1; overflow-y: auto; }
-                .callhist-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    padding: 12px 16px;
-                    border-bottom: 1px solid var(--border-color, #f0f0f0);
-                    cursor: default;
-                    transition: background 0.15s;
-                }
-                .callhist-row:active { background: var(--bg-secondary, #f9f9f9); }
-                .callhist-avatar-wrap {
-                    position: relative;
-                    flex-shrink: 0;
-                }
-                .callhist-avatar {
-                    width: 50px;
-                    height: 50px;
-                    border-radius: 50%;
-                    object-fit: cover;
-                }
-                .callhist-type-dot {
-                    position: absolute;
-                    bottom: -2px;
-                    right: -2px;
-                    width: 20px;
-                    height: 20px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    border: 2px solid var(--bg-primary, #fff);
-                    color: white;
-                }
-                .callhist-info {
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 2px;
-                    min-width: 0;
-                    cursor: pointer;
-                }
-                .callhist-name {
-                    font-size: 15px;
-                    font-weight: 600;
-                    color: var(--text-primary, #111);
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .callhist-meta {
-                    font-size: 12px;
-                    font-weight: 500;
-                    text-transform: capitalize;
-                }
-                .callhist-time {
-                    font-size: 11px;
-                    color: var(--text-secondary, #999);
-                }
-                .callhist-actions {
-                    display: flex;
-                    gap: 8px;
-                    flex-shrink: 0;
-                }
-                .callhist-action-btn {
-                    width: 38px;
-                    height: 38px;
-                    border: none;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: transform 0.15s, opacity 0.15s;
-                }
-                .callhist-action-btn:active { transform: scale(0.88); }
-                .callhist-action-btn.voice {
-                    background: #dcfce7;
-                    color: #16a34a;
-                }
-                .callhist-action-btn.video {
-                    background: #dbeafe;
-                    color: #2563eb;
-                }
-            `}</style>
-        </div>
-    );
+const STUN_SERVERS = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
 };
 
-// ─── Active Call Screen ────────────────────────────────────────────────
 const ActiveCallView = () => {
     const { username } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const userId = useCurrentUserId();
+    const { profileData, incomingCall, setIncomingCall } = useData();
+    const { showToast } = useToast();
     const isVideoCall = searchParams.get('type') === 'video';
 
+    const [peerProfile, setPeerProfile] = useState<any>(null);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(!isVideoCall);
     const [isSpeakerOn, setIsSpeakerOn] = useState(true);
     const [callDuration, setCallDuration] = useState(0);
-    const [isConnecting, setIsConnecting] = useState(true);
+    const [callState, setCallState] = useState<'connecting' | 'ringing' | 'connected' | 'ended'>('connecting');
 
     const localVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-    useEffect(() => {
-        const timer = setTimeout(() => setIsConnecting(false), 3000);
-        return () => clearTimeout(timer);
+    const pcRef = useRef<RTCPeerConnection | null>(null);
+    const localStreamRef = useRef<MediaStream | null>(null);
+
+    // Cleanup func
+    const cleanupCall = useCallback(() => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+        }
+        if (pcRef.current) {
+            pcRef.current.close();
+            pcRef.current = null;
+        }
     }, []);
 
+    // 1. Fetch Peer
     useEffect(() => {
-        if (isConnecting) return;
-        const interval = setInterval(() => setCallDuration(prev => prev + 1), 1000);
-        return () => clearInterval(interval);
-    }, [isConnecting]);
+        if (!username) return;
+        insforge.database.from('profiles').select().eq('username', username).single().then(({ data }) => {
+            if (data) setPeerProfile(data);
+        });
+    }, [username]);
 
+    // 2. Initialize Media & WebRTC
     useEffect(() => {
-        if (isVideoCall && !isVideoOff) {
-            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                .then(stream => { if (localVideoRef.current) localVideoRef.current.srcObject = stream; })
-                .catch(err => console.error('Camera error:', err));
-        }
-    }, [isVideoCall, isVideoOff]);
+        if (!userId || !peerProfile) return;
 
-    const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-
-    const handleEndCall = async () => {
-        const stream = localVideoRef.current?.srcObject as MediaStream;
-        stream?.getTracks().forEach(t => t.stop());
-
-        // Record call to database if we have duration
-        if (userId && username) {
+        let isSubscribed = true;
+        const initCall = async () => {
             try {
-                // Find receiver profile by username
-                const { data: receiverProfile } = await insforge.database
-                    .from('profiles')
-                    .select('id')
-                    .eq('username', username)
-                    .single();
+                // Get Media
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: isVideoCall ? true : false,
+                    audio: true
+                });
 
-                if (receiverProfile) {
-                    await insforge.database.from('calls').insert({
+                if (!isSubscribed) {
+                    stream.getTracks().forEach(t => t.stop());
+                    return;
+                }
+
+                localStreamRef.current = stream;
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+                // Create RTCPeerConnection
+                const pc = new RTCPeerConnection(STUN_SERVERS);
+                pcRef.current = pc;
+
+                // Add local tracks
+                stream.getTracks().forEach(track => {
+                    pc.addTrack(track, stream);
+                });
+
+                // Handle remote track
+                pc.ontrack = (event) => {
+                    if (remoteVideoRef.current && event.streams[0]) {
+                        remoteVideoRef.current.srcObject = event.streams[0];
+                    }
+                };
+
+                // Handle ICE candidate
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        insforge.realtime.publish(`user:${peerProfile.id}`, 'CALL_ICE_CANDIDATE', {
+                            candidate: event.candidate,
+                            caller_id: userId
+                        });
+                    }
+                };
+
+                // Connection State
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'connected') setCallState('connected');
+                    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') handleEndCall(false);
+                };
+
+                // Caller vs Receiver Logic
+                const isReceiver = incomingCall && incomingCall.caller_id === peerProfile.id;
+
+                if (isReceiver) {
+                    // Receiver: set remote description from Offer, create Answer
+                    setCallState('connected'); // we answered it
+                    if (incomingCall.offer) {
+                        await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        insforge.realtime.publish(`user:${peerProfile.id}`, 'CALL_ANSWER', {
+                            answer,
+                            caller_id: userId
+                        });
+                    }
+                } else {
+                    // Caller: create Offer
+                    setCallState('ringing');
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    insforge.realtime.publish(`user:${peerProfile.id}`, 'CALL_INIT', {
                         caller_id: userId,
-                        receiver_id: receiverProfile.id,
+                        caller_name: profileData?.name || 'Someone',
+                        caller_avatar: profileData?.avatar_url,
+                        type: isVideoCall ? 'video' : 'voice',
+                        username: profileData?.username,
+                        offer: offer
+                    });
+                }
+            } catch (err: any) {
+                const isPermissionError = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+                const message = isPermissionError
+                    ? 'Camera/microphone access denied. Please enable it in browser settings.'
+                    : 'Failed to initialize call. Please try again.';
+                showToast(message, 'error');
+                handleEndCall();
+            }
+        };
+
+        if (!pcRef.current) {
+            initCall();
+        }
+
+        return () => {
+            isSubscribed = false;
+        };
+    }, [userId, peerProfile]);
+
+    // 3. Listen for WebRTC signals (Answer, ICE, End)
+    useEffect(() => {
+        if (!userId) return;
+
+        const handleAnswer = async (payload: any) => {
+            if (payload.caller_id === peerProfile?.id && pcRef.current) {
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+                setCallState('connected');
+            }
+        };
+
+        const handleIceCandidate = async (payload: any) => {
+            if (payload.caller_id === peerProfile?.id && pcRef.current && payload.candidate) {
+                try {
+                    await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                } catch (e) { console.error('Error adding ICE candidate', e); }
+            }
+        };
+
+        const handleCallEnd = (payload: any) => {
+            if (payload.caller_id === peerProfile?.id) {
+                handleEndCall(false); // peer ended it
+            }
+        };
+
+        insforge.realtime.on('CALL_ANSWER', handleAnswer);
+        insforge.realtime.on('CALL_ICE_CANDIDATE', handleIceCandidate);
+        insforge.realtime.on('CALL_END', handleCallEnd);
+
+        return () => {
+            insforge.realtime.off('CALL_ANSWER', handleAnswer);
+            insforge.realtime.off('CALL_ICE_CANDIDATE', handleIceCandidate);
+            insforge.realtime.off('CALL_END', handleCallEnd);
+        };
+    }, [userId, peerProfile]);
+
+    // 4. Call Duration Timer
+    useEffect(() => {
+        let timer: any;
+        if (callState === 'connected') {
+            timer = setInterval(() => setCallDuration(prev => prev + 1), 1000);
+        }
+        return () => clearInterval(timer);
+    }, [callState]);
+
+    // 5. Mute / Video Toggles
+    useEffect(() => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(t => t.enabled = !isMuted);
+        }
+    }, [isMuted]);
+
+    useEffect(() => {
+        if (localStreamRef.current) {
+            localStreamRef.current.getVideoTracks().forEach(t => t.enabled = !isVideoOff);
+        }
+    }, [isVideoOff]);
+
+    const formatDuration = useCallback((s: number) => {
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }, []);
+
+    const handleEndCall = useCallback(async (isLocalEnd = true) => {
+        if (callState === 'ended') return;
+        setCallState('ended');
+
+        if (isLocalEnd && peerProfile && userId) {
+            insforge.realtime.publish(`user:${peerProfile.id}`, 'CALL_END', { caller_id: userId }).catch(() => { });
+        }
+
+        cleanupCall();
+        setIncomingCall(null);
+
+        // only the caller logs the call history to prevent duplicates
+        const isCaller = !(incomingCall && incomingCall.caller_id === peerProfile?.id);
+
+        if (isCaller && userId && peerProfile) {
+            try {
+                const { data: callData } = await insforge.database
+                    .from('calls')
+                    .insert([{
+                        caller_id: userId,
+                        receiver_id: peerProfile.id,
                         type: isVideoCall ? 'video' : 'voice',
                         status: callDuration > 0 ? 'completed' : 'missed',
                         duration: callDuration
-                    });
-                }
-            } catch (err) {
-                console.error("Failed to save call log:", err);
-            }
-        }
+                    }])
+                    .select('id')
+                    .single();
 
+                if (callData) {
+                    const statusLabel = callDuration > 0 ? (isVideoCall ? 'Video call' : 'Voice call') : 'Missed call';
+                    const { data: msgData } = await insforge.database
+                        .from('messages')
+                        .insert([{
+                            sender_id: userId,
+                            receiver_id: peerProfile.id,
+                            text: statusLabel,
+                            call_id: callData.id,
+                            is_seen: false
+                        }])
+                        .select('id')
+                        .single();
+
+                    if (msgData) {
+                        const publishPayload = {
+                            id: msgData.id,
+                            sender_id: userId,
+                            receiver_id: peerProfile.id,
+                            text: statusLabel,
+                            call_id: callData.id,
+                            created_at: new Date().toISOString()
+                        };
+                        insforge.realtime.publish(`chat:${peerProfile.id}`, 'INSERT_message', publishPayload).catch(() => { });
+                        insforge.realtime.publish(`chat:${userId}`, 'INSERT_message', publishPayload).catch(() => { });
+                    }
+                }
+            } catch (err) { }
+        }
         navigate(-1);
-    };
+    }, [userId, peerProfile, isVideoCall, callDuration, navigate, callState, incomingCall, setIncomingCall, cleanupCall]);
 
     return (
         <div className={`call-container ${isVideoCall ? 'video-mode' : 'voice-mode'}`}>
-            <div className="call-bg-blur" style={{ backgroundColor: 'var(--primary-color)', opacity: 0.2 }}>
-                {/* Removed hardcoded background image */}
-            </div>
+            <div className="call-bg-blur" style={{
+                background: peerProfile?.avatar_url
+                    ? `url(${peerProfile.avatar_url}) center/cover no-repeat`
+                    : 'var(--primary-dark)',
+                filter: 'blur(30px) brightness(0.35)',
+                transform: 'scale(1.1)'
+            }}></div>
 
             <div className="call-main-area">
-                {isVideoCall && !isVideoOff ? (
+                {isVideoCall ? (
                     <div className="video-full-preview">
-                        <div className="remote-video-placeholder">
-                            <Avatar
-                                src={null} // Remote user may not have URL easily available in this simplified view, use initials
-                                name={username}
-                                size={140}
-                                className="remote-avatar-large"
-                            />
-                            <div className="remote-status-badge">Waiting for {username}...</div>
-                        </div>
-                        <div className="local-video-pip">
+                        {callState !== 'connected' ? (
+                            <div className="remote-video-placeholder">
+                                <Avatar src={peerProfile?.avatar_url} name={peerProfile?.name || username} size={140} className="remote-avatar-large" />
+                                <div className="remote-status-badge">
+                                    {callState === 'ringing' ? 'Ringing...' : 'Connecting...'}
+                                </div>
+                            </div>
+                        ) : (
+                            <video ref={remoteVideoRef} autoPlay playsInline className="remote-video" />
+                        )}
+                        <div className="local-video-pip fade-in">
                             <video ref={localVideoRef} autoPlay playsInline muted />
                             {!isVideoOff && <div className="pip-label">You</div>}
                         </div>
                     </div>
                 ) : (
-                    <div className="voice-info-card">
-                        <div className={`avatar-pulse-container ${isConnecting ? 'pulsing' : ''}`}>
+                    <div className="voice-info-card fade-in">
+                        <div className={`avatar-pulse-container ${callState !== 'connected' ? 'pulsing' : ''}`}>
                             <Avatar
-                                src={null}
-                                name={username}
+                                src={peerProfile?.avatar_url}
+                                name={peerProfile?.name || username}
                                 size={160}
                                 className="call-avatar"
                             />
                         </div>
-                        <h2 className="call-username">{username}</h2>
-                        <p className="call-status">{isConnecting ? 'Ringing...' : fmt(callDuration)}</p>
+                        <h2 className="call-username">{peerProfile?.name || username}</h2>
+                        <p className="call-status">
+                            {callState === 'connected' ? formatDuration(callDuration) : callState === 'ringing' ? 'Ringing...' : 'Connecting...'}
+                        </p>
                     </div>
                 )}
             </div>
@@ -356,15 +333,17 @@ const ActiveCallView = () => {
                         {isSpeakerOn ? <Volume2 size={24} /> : <VolumeX size={24} />}
                         <span>Speaker</span>
                     </button>
-                    <button className={`call-action-btn ${isVideoOff ? '' : 'active'}`} onClick={() => setIsVideoOff(!isVideoOff)}>
-                        {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
-                        <span>Video</span>
-                    </button>
+                    {isVideoCall && (
+                        <button className={`call-action-btn ${isVideoOff ? '' : 'active'}`} onClick={() => setIsVideoOff(!isVideoOff)}>
+                            {isVideoOff ? <VideoOff size={24} /> : <VideoIcon size={24} />}
+                            <span>Video</span>
+                        </button>
+                    )}
                     <button className={`call-action-btn ${isMuted ? 'active' : ''}`} onClick={() => setIsMuted(!isMuted)}>
                         {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
                         <span>Mute</span>
                     </button>
-                    <button className="call-end-btn" onClick={handleEndCall}>
+                    <button className="call-end-btn" onClick={() => handleEndCall(true)}>
                         <PhoneOff size={28} color="white" />
                     </button>
                 </div>
@@ -383,6 +362,7 @@ const ActiveCallView = () => {
                 .call-username { font-size:32px;font-weight:700;margin-bottom:8px;text-shadow:0 2px 10px rgba(0,0,0,0.5); }
                 .call-status { font-size:18px;opacity:0.8;letter-spacing:0.5px; }
                 .video-full-preview { position:absolute;inset:0;background:#111; }
+                .remote-video { width: 100%; height: 100%; object-fit: cover; }
                 .remote-video-placeholder { width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#000; }
                 .remote-avatar-large { width:140px;height:140px;border-radius:50%;margin-bottom:20px;filter:grayscale(0.5); }
                 .remote-status-badge { font-size:14px;opacity:0.7; }
@@ -406,13 +386,13 @@ const ActiveCallView = () => {
 const CallView = () => {
     const { username } = useParams();
     const [searchParams] = useSearchParams();
-    const callType = searchParams.get('type'); // null = history, 'voice'/'video' = active call
+    const callType = searchParams.get('type');
 
-    // If there's a type param AND username we're in an active call
-    // If username is "history" (from /call/history route) or no type, show history
-    const showHistory = !callType || username === 'history';
+    if (!callType || username === 'history') {
+        return <Navigate to="/calls" replace />;
+    }
 
-    return showHistory ? <CallHistoryView /> : <ActiveCallView />;
+    return <ActiveCallView />;
 };
 
 export default CallView;

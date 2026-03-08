@@ -1,12 +1,2 @@
 /* Clean up default App.css */
-/* Styles are primarily in index.css for the global Material UI look */
-.app-transition-enter {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.app-transition-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 300ms, transform 300ms;
-}
+/* Styles are primarily in index.css for the global premium design system */

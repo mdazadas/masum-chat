@@ -1,31 +1,38 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback, memo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
     ArrowLeft, Phone, Video, Check, CheckCheck, MoreVertical,
     Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
-    Reply, RefreshCcw
+    Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
+    Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
+    Search, Palette, Ban
 } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useToast } from '../context/ToastContext';
-import { useTheme } from '../context/ThemeContext';
 import { getPendingMedia, clearPendingMedia } from '../pendingMediaStore';
-import { insforge, BUCKETS } from '../lib/insforge';
-import { useCurrentUserId } from '../hooks/useCurrentUser';
+import { insforge } from '../lib/insforge';
 import Avatar from '../components/Avatar';
 import LoadingOverlay from '../components/LoadingOverlay';
+import FloatingActionSheet from '../components/FloatingActionSheet';
 import { useData } from '../context/DataContext';
 
 interface Message {
     id: number;
+    clientId?: string | number;
     text: string;
     time: string;
     sender: 'me' | 'other';
     status: 'sent' | 'delivered' | 'read';
+    is_deleted?: boolean;
     image?: string | null;
     audio?: string | null; // Added audio support
     audioDuration?: string;
     mediaType?: 'image' | 'video' | 'audio';
     uploading?: boolean;
+    optimistic?: boolean;
     uploadProgress?: number;
+    call_id?: number | null;
     replyTo?: {
         id: number;
         text: string;
@@ -33,11 +40,19 @@ interface Message {
     } | null;
 }
 
-const AudioPlayer = ({ src, duration, sender }: { src: string; duration?: string; sender?: 'me' | 'other' }) => {
+const AudioPlayer = ({ src, duration: initialDuration, sender }: { src: string; duration?: string; sender?: 'me' | 'other' }) => {
     const isSent = sender === 'me';
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [duration, setDuration] = useState(initialDuration || "0:00");
     const audioRef = useRef<HTMLAudioElement>(null);
+
+    const fmt = (s: number) => {
+        if (!isFinite(s)) return '0:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m}:${sec.toString().padStart(2, '0')}`;
+    };
 
     const togglePlay = () => {
         if (!audioRef.current) return;
@@ -55,12 +70,31 @@ const AudioPlayer = ({ src, duration, sender }: { src: string; duration?: string
         const total = audioRef.current.duration;
         if (total) {
             setProgress((current / total) * 100);
+            if (isPlaying) setDuration(fmt(current));
         }
+    };
+
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!audioRef.current) return;
+        const val = Number(e.target.value);
+        audioRef.current.currentTime = (val / 100) * audioRef.current.duration;
+        setProgress(val);
+        setDuration(fmt(audioRef.current.currentTime));
     };
 
     const handleEnded = () => {
         setIsPlaying(false);
         setProgress(0);
+        if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            if (audioRef.current.duration && audioRef.current.duration !== Infinity) {
+                setDuration(fmt(audioRef.current.duration));
+            } else if (initialDuration) {
+                setDuration(initialDuration);
+            } else {
+                setDuration("0:00");
+            }
+        }
     };
 
     return (
@@ -70,57 +104,85 @@ const AudioPlayer = ({ src, duration, sender }: { src: string; duration?: string
                 src={src}
                 onTimeUpdate={handleTimeUpdate}
                 onEnded={handleEnded}
+                onPause={() => {
+                    if (audioRef.current && audioRef.current.duration && audioRef.current.duration !== Infinity) {
+                        setDuration(fmt(audioRef.current.duration));
+                    } else if (initialDuration) {
+                        setDuration(initialDuration);
+                    }
+                }}
+                onLoadedMetadata={() => {
+                    if (audioRef.current) {
+                        // WebM duration hack for Chrome/Recording
+                        if (audioRef.current.duration === Infinity || isNaN(audioRef.current.duration)) {
+                            audioRef.current.currentTime = 1e101;
+                            setTimeout(() => {
+                                if (audioRef.current) {
+                                    audioRef.current.currentTime = 0;
+                                    const d = fmt(audioRef.current.duration);
+                                    if (d !== '0:00') setDuration(d);
+                                    else if (initialDuration) setDuration(initialDuration);
+                                }
+                            }, 200);
+                        } else {
+                            const d = fmt(audioRef.current.duration);
+                            setDuration(d);
+                        }
+                    }
+                }}
             />
             <button className={`audio-play-btn ${isSent ? 'audio-btn-sent' : 'audio-btn-received'}`} onClick={togglePlay}>
-                {isPlaying ?
-                    <svg viewBox="0 0 24 24" width="22" height="22" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg> :
-                    <svg viewBox="0 0 24 24" width="22" height="22" fill="white"><path d="M8 5v14l11-7z" /></svg>
-                }
+                {isPlaying ? <Pause size={20} color="white" fill="white" /> : <Play size={20} color="white" fill="white" />}
             </button>
             <div className="audio-content-area">
-                <div className="audio-visualizer-bars">
-                    {[...Array(15)].map((_, i) => (
-                        <div
-                            key={i}
-                            className="audio-bar"
-                            style={{
-                                height: `${Math.random() * 60 + 20}% `,
-                                opacity: progress > (i / 15 * 100) ? 1 : 0.3
-                            }}
-                        />
-                    ))}
-                </div>
-                <div className="audio-progress-background">
-                    <div className="audio-progress-thumb" style={{ left: `${progress}%` }} />
-                </div>
+                <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={progress}
+                    onChange={handleSeek}
+                    className={`audio-seek-bar-simple ${isSent ? 'seek-sent' : 'seek-received'}`}
+                />
                 <div className="audio-meta-row">
-                    <span className="audio-duration-text">{duration || "0:00"}</span>
+                    <span className="audio-duration-text">{duration}</span>
                 </div>
             </div>
         </div>
     );
 };
 
-const SwipeableMessage = ({
+const DateSeparator = ({ date }: { date: string }) => (
+    <div className="date-separator">
+        <span className="date-text">{date}</span>
+    </div>
+);
+
+const SwipeableMessage = memo(({
     msg,
-    index,
-    messages,
-    showUnreadIndicator,
     onReply,
     onLongPress,
     onPreviewImage,
     handleUnblock,
     onScrollToReply,
-    messageRef
+    messageRef,
+    firstUnreadMessageId,
+    initialUnreadCount,
+    navigate,
+    username,
+    showDateSeparator,
+    dateLabel
 }: any) => {
     const [swipeX, setSwipeX] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
+    const [isPressing, setIsPressing] = useState(false);
+    const [mediaLoaded, setMediaLoaded] = useState(false);
     const touchStartX = useRef(0);
     const swipeThreshold = 60;
 
     const handleTouchStart = (e: React.TouchEvent) => {
         touchStartX.current = e.touches[0].clientX;
         setIsSwiping(true);
+        setIsPressing(true);
     };
 
     const handleTouchMove = (e: React.TouchEvent) => {
@@ -138,31 +200,33 @@ const SwipeableMessage = ({
         }
         setSwipeX(0);
         setIsSwiping(false);
+        setIsPressing(false);
     };
 
     return (
         <div className="message-outer-wrapper" ref={messageRef}>
+            {showDateSeparator && <DateSeparator date={dateLabel} />}
             <div
                 className="swipe-reply-indicator"
                 style={{
                     opacity: Math.min(swipeX / swipeThreshold, 1),
-                    transform: `translateY(-50 %) scale(${Math.min(swipeX / swipeThreshold, 1)})`,
-                    left: `${swipeX - 35} px`
+                    transform: `translateY(-50%) scale(${Math.min(swipeX / swipeThreshold, 1)})`,
+                    left: `${swipeX - 35}px`
                 }}
             >
                 <Reply size={20} />
             </div>
 
             <div
-                className={`message - bubble - container ${isSwiping ? 'swiping' : ''} `}
+                className={`message-bubble-container ${isSwiping ? 'swiping' : ''} ${isPressing ? 'pressing' : ''}`}
                 style={{ transform: `translateX(${swipeX}px)` }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
-                {showUnreadIndicator && index === messages.length - 1 && (
-                    <div className="unread-divider">
-                        <div className="unread-text">New messages</div>
+                {firstUnreadMessageId.current !== null && initialUnreadCount.current && msg.id === firstUnreadMessageId.current && (
+                    <div className="unread-divider" key="unread-divider">
+                        <div className="unread-text">{initialUnreadCount.current} New messages</div>
                     </div>
                 )}
 
@@ -173,111 +237,184 @@ const SwipeableMessage = ({
                         </div>
                     </div>
                 ) : (
-                    <div className="message-wrapper" style={{ alignItems: msg.sender === 'me' ? 'flex-end' : 'flex-start' }}>
+                    <div
+                        className="message-wrapper"
+                        style={{
+                            alignItems: msg.sender === 'me' ? 'flex-end' : 'flex-start',
+                            // Only animate messages created very recently (within the last 15 seconds)
+                            animation: (msg.optimistic || (msg.id > Date.now() - 15000)) ? 'messageSlideIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' : 'none'
+                        }}
+                    >
                         <div
-                            className={`message - bubble ${msg.sender === 'me' ? 'message-sent' : 'message-received'} `}
+                            className={`message-bubble ${msg.sender === 'me' ? 'message-sent' : 'message-received'} ${msg.is_deleted ? 'message-deleted' : ''} ${msg.optimistic ? 'message-pending' : ''}`}
                             onContextMenu={(e) => { e.preventDefault(); onLongPress(msg); }}
                         >
-                            {msg.replyTo && (
-                                <div
-                                    className="message-reply-context"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onScrollToReply(msg.replyTo.id);
-                                    }}
-                                >
-                                    <span className="message-reply-name">
-                                        {msg.replyTo.username === 'me' ? 'You' : msg.replyTo.username}
-                                    </span>
-                                    <span className="message-reply-text">
-                                        {msg.replyTo.text}
-                                    </span>
+                            {msg.is_deleted ? (
+                                <div className="deleted-message-content" style={{ opacity: 0.6, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Trash2 size={12} />
+                                    <span className="deleted-text">This message was deleted</span>
                                 </div>
-                            )}
-                            {msg.image && (
-                                <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                    {msg.mediaType === 'video' ? (
+                            ) : (
+                                <>
+                                    {msg.replyTo && (
                                         <div
-                                            className="video-thumb-wrapper"
-                                            onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: 'video' })}
-                                            style={{ cursor: msg.uploading ? 'default' : 'pointer' }}
+                                            className="message-reply-context"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onScrollToReply(msg.replyTo.id);
+                                            }}
                                         >
-                                            <video
-                                                src={msg.image}
-                                                className="message-image-content"
-                                                playsInline
-                                                preload="metadata"
-                                                muted
-                                                style={{ opacity: msg.uploading ? 0.5 : 1, pointerEvents: 'none' }}
-                                            />
-                                            {!msg.uploading && (
-                                                <div className="video-play-hint-bubble">
-                                                    <svg viewBox="0 0 24 24" width="28" height="28" fill="white"><path d="M8 5v14l11-7z" /></svg>
+                                            <span className="message-reply-name">
+                                                {msg.replyTo.username === 'me' ? 'You' : msg.replyTo.username}
+                                            </span>
+                                            <span className="message-reply-text">
+                                                {msg.replyTo.text}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {msg.image && msg.mediaType !== 'audio' && (
+                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                            {msg.mediaType === 'video' ? (
+                                                <div
+                                                    className={`video-thumb-wrapper ${(msg.uploading || !mediaLoaded) ? 'skeleton-shimmer media-uploading-structure' : ''}`}
+                                                    onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: 'video' })}
+                                                    style={{ cursor: msg.uploading ? 'default' : 'pointer', position: 'relative', minHeight: '200px' }}
+                                                >
+                                                    <video
+                                                        src={msg.image}
+                                                        className="message-image-content"
+                                                        playsInline
+                                                        preload="auto"
+                                                        muted
+                                                        onLoadedData={() => setMediaLoaded(true)}
+                                                        style={{
+                                                            opacity: (msg.uploading || !mediaLoaded) ? 0 : 1,
+                                                            transform: (msg.uploading || !mediaLoaded) ? 'scale(0.95)' : 'scale(1)',
+                                                            transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                                            pointerEvents: 'none',
+                                                            objectFit: 'cover'
+                                                        }}
+                                                    />
+                                                    {(msg.uploading || !mediaLoaded) && (
+                                                        <div className="upload-progress-overlay">
+                                                            <div className="media-placeholder-icon">
+                                                                <Video size={32} color="rgba(255,255,255,0.7)" />
+                                                            </div>
+                                                            <div className="upload-progress-bar">
+                                                                <div className="upload-progress-fill" style={{ width: `${Math.max(msg.uploadProgress || 0, 5)}%` }} />
+                                                            </div>
+                                                            <span className="upload-progress-label">{msg.uploading ? (msg.uploadProgress ? `${msg.uploadProgress}%` : 'Sending...') : 'Loading...'}</span>
+                                                        </div>
+                                                    )}
+                                                    {!msg.uploading && mediaLoaded && (
+                                                        <div className="video-play-hint-bubble">
+                                                            <svg viewBox="0 0 24 24" width="28" height="28" fill="white"><path d="M8 5v14l11-7z" /></svg>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                            {msg.uploading && (
-                                                <div style={{
-                                                    position: 'absolute', inset: 0, display: 'flex',
-                                                    flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                                    background: 'rgba(0,0,0,0.45)', borderRadius: '10px'
-                                                }}>
-                                                    <div className="upload-progress-bar" style={{ width: '80%' }}>
-                                                        <div className="upload-progress-fill" style={{ width: `${msg.uploadProgress ?? 0}% ` }} />
-                                                    </div>
-                                                    <span className="upload-progress-label">{msg.uploadProgress ?? 0}%</span>
+                                            ) : (
+                                                <div style={{ position: 'relative', minHeight: '200px' }} className={(msg.uploading || !mediaLoaded) ? 'media-uploading-structure skeleton-shimmer' : ''}>
+                                                    <img
+                                                        src={msg.image}
+                                                        alt="Sent"
+                                                        className="message-image-content"
+                                                        loading="eager"
+                                                        onLoad={() => setMediaLoaded(true)}
+                                                        style={{
+                                                            opacity: (msg.uploading || !mediaLoaded) ? 0 : 1,
+                                                            transform: (msg.uploading || !mediaLoaded) ? 'scale(0.95)' : 'scale(1)',
+                                                            transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                                            cursor: msg.uploading ? 'default' : 'pointer',
+                                                            objectFit: 'cover'
+                                                        }}
+                                                        onClick={() => !msg.uploading && mediaLoaded && onPreviewImage({ url: msg.image!, type: msg.mediaType || 'image' })}
+                                                    />
+                                                    {(msg.uploading || !mediaLoaded) && (
+                                                        <div className="upload-progress-overlay">
+                                                            <div className="media-placeholder-icon">
+                                                                <ImageIcon size={32} color="rgba(255,255,255,0.7)" />
+                                                            </div>
+                                                            <div className="upload-progress-bar">
+                                                                <div className="upload-progress-fill" style={{ width: `${Math.max(msg.uploadProgress || 0, 5)}%` }} />
+                                                            </div>
+                                                            <span className="upload-progress-label">{msg.uploading ? (msg.uploadProgress ? `${msg.uploadProgress}%` : 'Sending...') : 'Loading...'}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
-                                    ) : (
-                                        <>
-                                            <img
-                                                src={msg.image}
-                                                alt="Sent"
-                                                className="message-image-content"
-                                                style={{ opacity: msg.uploading ? 0.6 : 1, transition: 'opacity 0.3s', cursor: msg.uploading ? 'default' : 'pointer' }}
-                                                onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: msg.mediaType || 'image' })}
-                                            />
-                                            {msg.mediaType === 'video' && !msg.uploading && (
-                                                <div className="video-play-hint">
-                                                    <svg viewBox="0 0 24 24" width="30" height="30" fill="white"><path d="M8 5v14l11-7z" /></svg>
-                                                </div>
-                                            )}
-                                            {msg.uploading && (
-                                                <div className="upload-progress-overlay">
-                                                    <div className="upload-progress-bar">
-                                                        <div className="upload-progress-fill" style={{ width: `${msg.uploadProgress ?? 0}% ` }} />
+                                    )}
+
+                                    {msg.audio && (
+                                        <AudioPlayer src={msg.audio} duration={msg.audioDuration} sender={msg.sender} />
+                                    )}
+
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        {msg.call_id ? (
+                                            <div className="call-message-bubble">
+                                                <div className="call-info-row">
+                                                    <div className="call-icon-container" style={{
+                                                        background: msg.text.includes('Missed') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                                                        color: msg.text.includes('Missed') ? '#ef4444' : '#22c55e'
+                                                    }}>
+                                                        {msg.text.includes('Video') ? <Video size={18} /> : <Phone size={18} />}
                                                     </div>
-                                                    <span className="upload-progress-label">{msg.uploadProgress ?? 0}%</span>
+                                                    <div className="call-text-content">
+                                                        <span className="call-type-label">{msg.text}</span>
+                                                        <div className="call-status-sub">
+                                                            {msg.sender === 'me' ? (
+                                                                <PhoneOutgoing size={12} style={{ marginRight: 4 }} />
+                                                            ) : (
+                                                                msg.text.includes('Missed') ?
+                                                                    <PhoneMissed size={12} style={{ marginRight: 4 }} /> :
+                                                                    <PhoneIncoming size={12} style={{ marginRight: 4 }} />
+                                                            )}
+                                                            {msg.sender === 'me' ? 'Outgoing' : (msg.text.includes('Missed') ? 'Missed' : 'Incoming')}
+                                                        </div>
+                                                    </div>
                                                 </div>
+                                                <button
+                                                    className="call-again-btn"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const type = msg.text.includes('Video') ? 'video' : 'voice';
+                                                        navigate(`/call/${username}?type=${type}`);
+                                                    }}
+                                                >
+                                                    {msg.text.includes('Missed') ? 'Call Back' : 'Call Again'}
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className={`message-text ${msg.text === 'This message was deleted' ? 'deleted-text' : ''}`}>
+                                                {msg.text}
+                                            </div>
+                                        )}
+                                        <div className="message-footer">
+                                            <span className="message-time">{msg.time}</span>
+                                            {msg.sender === 'me' && (
+                                                <span className="status-ticks">
+                                                    {(msg.optimistic || msg.uploading) ? (
+                                                        <Clock size={12} className="tick-pending" />
+                                                    ) : msg.status === 'read' ? (
+                                                        <CheckCheck size={14} className="tick-blue" />
+                                                    ) : msg.status === 'delivered' ? (
+                                                        <CheckCheck size={14} className="tick-delivered" />
+                                                    ) : (
+                                                        <Check size={14} className="tick-sent" />
+                                                    )}
+                                                </span>
                                             )}
-                                        </>
-                                    )}
-                                </div>
+                                        </div>
+                                    </div>
+                                </>
                             )}
-
-                            {msg.audio && (
-                                <AudioPlayer src={msg.audio} duration={msg.audioDuration} sender={msg.sender} />
-                            )}
-
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <div className="message-text">{msg.text}</div>
-                                <div className="message-footer">
-                                    <span className="message-time">{msg.time}</span>
-                                    {msg.sender === 'me' && (
-                                        <span className="status-ticks">
-                                            {msg.status === 'read' ? <CheckCheck size={14} className="tick-blue" /> :
-                                                msg.status === 'delivered' ? <CheckCheck size={14} /> : <Check size={14} />}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 )}
             </div>
         </div>
     );
-};
+});
 
 // --- Custom Video Preview Player (full-screen overlay) ---
 const VideoPreviewPlayer = ({ src }: { src: string }) => {
@@ -309,7 +446,7 @@ const VideoPreviewPlayer = ({ src }: { src: string }) => {
     };
 
     return (
-        <div className="video-preview-player" onClick={(e) => e.stopPropagation()}>
+        <div className="video-preview-player" onClick={(e) => { e.stopPropagation(); togglePlay(); }}>
             <video
                 ref={videoRef}
                 src={src}
@@ -326,16 +463,22 @@ const VideoPreviewPlayer = ({ src }: { src: string }) => {
                 onLoadedMetadata={() => {
                     if (videoRef.current) setDuration(videoRef.current.duration);
                 }}
+                onDurationChange={() => {
+                    if (videoRef.current) setDuration(videoRef.current.duration);
+                }}
                 onEnded={() => setIsPlaying(false)}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
             />
-            <div className="video-preview-controls">
+            {/* Play/Pause Overlay Icon (visible when paused) */}
+            {!isPlaying && (
+                <div className="video-preview-center-play">
+                    <Play size={48} color="white" fill="white" />
+                </div>
+            )}
+            <div className="video-preview-controls enhanced" onClick={(e) => e.stopPropagation()}>
                 <button className="video-ctrl-btn" onClick={togglePlay}>
-                    {isPlaying
-                        ? <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                        : <svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M8 5v14l11-7z" /></svg>
-                    }
+                    {isPlaying ? <Pause size={24} color="white" fill="white" /> : <Play size={24} color="white" fill="white" />}
                 </button>
                 <span className="video-time-label">{fmt(currentTime)}</span>
                 <input
@@ -343,7 +486,7 @@ const VideoPreviewPlayer = ({ src }: { src: string }) => {
                     min={0} max={100}
                     value={progress}
                     onChange={handleSeek}
-                    className="video-seek-bar"
+                    className="video-seek-bar-enhanced"
                 />
                 <span className="video-time-label">{fmt(duration)}</span>
             </div>
@@ -351,59 +494,241 @@ const VideoPreviewPlayer = ({ src }: { src: string }) => {
     );
 };
 
+const compressImage = (file: Blob | File | string, maxWidth = 1200, quality = 0.7): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = (maxWidth / width) * height;
+                width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+            }
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Canvas compression failed'));
+            }, 'image/jpeg', quality);
+            if (typeof file !== 'string') URL.revokeObjectURL(img.src);
+        };
+        img.onerror = (e) => reject(e);
+        img.src = typeof file === 'string' ? file : URL.createObjectURL(file);
+    });
+};
+
 const Chat = () => {
+    const { username } = useParams<{ username: string }>();
     const navigate = useNavigate();
-    const { username } = useParams();
+    const location = useLocation();
     const { showToast } = useToast();
-    const { chatWallpaper } = useTheme();
-    const userId = useCurrentUserId();
-    const { contacts, messagesCache, cacheMessages, setContacts } = useData();
-    const [receiverId, setReceiverId] = useState<string | null>(null);
-    const [receiver, setReceiver] = useState<any>(() => {
-        return contacts?.find(c => c.username === username);
-    });
+    const {
+        contacts, setContacts,
+        settings,
+        cacheMessages,
+        messagesCache,
+        userPresence,
+        globalTyping,
+        setActiveChatId,
+        userId
+    } = useData();
+    const chatWallpaper = settings?.chat_wallpaper;
+
+    // Helper: Scroll to bottom - defined earliest to avoid initialization race
+    const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior });
+        }
+    }, []);
+
+    // Prefill from cache/state for instant load
     const [messages, setMessages] = useState<Message[]>(() => {
-        return (username && messagesCache[username]) || [];
+        if (username && messagesCache[username]) return messagesCache[username];
+        return [];
     });
+    const [showMediaSheet, setShowMediaSheet] = useState(false);
+    const [receiver, setReceiver] = useState<any>(location.state?.profile || null);
+    const [receiverId, setReceiverId] = useState<string | null>(location.state?.profile?.contact_id || location.state?.profile?.id || null);
     const [inputText, setInputText] = useState('');
-    const [isBlocked, setIsBlocked] = useState(false);
-    const [showUnreadIndicator, setShowUnreadIndicator] = useState(false);
-    const [showMenu, setShowMenu] = useState(false);
-    const [longPressedMsg, setLongPressedMsg] = useState<any>(null);
-    const [isTyping, setIsTyping] = useState(false);
-    const [capturedImage, setCapturedImage] = useState<string | null>(null);
-    const [showBlockConfirm, setShowBlockConfirm] = useState(false);
-    const [showClearConfirm, setShowClearConfirm] = useState(false);
-    const [previewMedia, setPreviewMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
-    const [replyingTo, setReplyingTo] = useState<any>(null);
-    const [unreadCount, setUnreadCount] = useState(0);
-    const [isAtBottom, setIsAtBottom] = useState(true);
-    const [badgeText, setBadgeText] = useState('');
+    const [loading, setLoading] = useState(() => {
+        if (username && messagesCache[username]?.length > 0) return false;
+        return true;
+    });
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
-    const [loading, setLoading] = useState(!messages.length);
+    const [isBlocked, setIsBlocked] = useState(false);
+    const [showUnreadIndicator] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [badgeText, setBadgeText] = useState('');
+    const [isAtBottom, setIsAtBottom] = useState(true);
+    const [, forceUpdate] = useState({}); // Dummy state for presence refresh
+    const isAtBottomRef = useRef(true); // Sync ref for message handler logic
+    const firstUnreadIdRef = useRef<number | null>(null);
+    // Session-persistent unread banner — not reset by DB is_seen updates
+    const firstUnreadMessageId = useRef<number | null>(null);
+    const initialUnreadCount = useRef<number>(0);
+
+    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+    const [longPressedMsg, setLongPressedMsg] = useState<Message | null>(null);
+    const [previewMedia, setPreviewMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+    const [showMenu, setShowMenu] = useState(false);
+    const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
-    const firstUnreadIdRef = useRef<number | null>(null);
-
-    const chatEndRef = useRef<HTMLDivElement>(null);
-    const galleryInputRef = useRef<HTMLInputElement>(null);
-    const messageInputRef = useRef<HTMLTextAreaElement>(null);
-    const recordingInterval = useRef<any>(null);
-    const sendMediaDirectlyRef = useRef<((url: string, type: 'image' | 'video') => void) | null>(null);
-
+    const [isTyping, setIsTyping] = useState(false);
+    const [capturedImage, setCapturedImage] = useState<string | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
+    const recordingInterval = useRef<any>(null);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const lastDBSyncRef = useRef<string>('');
+    const messageInputRef = useRef<HTMLTextAreaElement>(null);
+    const galleryInputRef = useRef<HTMLInputElement>(null);
+    const sendMediaDirectlyRef = useRef<any>(null);
     const [isPaused, setIsPaused] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const recordingTimeRef = useRef(0); // Ref for stale-closure-safe duration
     const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+    const userIdRef = useRef(userId);
+    const receiverIdRef = useRef(receiverId);
+    const contactsRef = useRef(contacts);
 
-    const scrollToBottom = useCallback(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Track active chat for unread count suppression
+    useEffect(() => {
+        if (receiverId) {
+            setActiveChatId(receiverId);
+            return () => setActiveChatId(null);
+        }
+    }, [receiverId, setActiveChatId]);
+
+    // 1. Initial Positioning: Scroll to bottom immediately on mount if cached messages exist.
+    // useLayoutEffect is critical as it runs before paint, preventing the "jump" after rendering.
+    useLayoutEffect(() => {
+        if (messages.length > 0) {
+            scrollToBottom('instant' as any);
+        }
     }, []);
 
-    const handleScrollToReply = (id: number) => {
+
+    // Sync refs with state
+    useEffect(() => { userIdRef.current = userId; }, [userId]);
+    useEffect(() => { receiverIdRef.current = receiverId; }, [receiverId]);
+    useEffect(() => { contactsRef.current = contacts; }, [contacts]);
+
+
+    // REAL-TIME SYNC: Reflect global cache updates in local state
+    // This ensures that when handleNewMessage (in DataContext) updates the cache,
+    // the active chat page sees it immediately.
+    useEffect(() => {
+        if (!username) return;
+        const cached = messagesCache[username];
+        if (!cached) return;
+
+        // Efficient check: length or last message ID change
+        const hasLengthChange = cached.length !== messages.length;
+        const hasIdChange = cached.length > 0 && messages.length > 0 && cached[cached.length - 1].id !== messages[messages.length - 1].id;
+
+        // Also check if any local optimistic message became a real one (uploading false)
+        const hasUploadStatusChange = messages.some(m => m.uploading) && !cached.some(m => m.uploading);
+
+        if (hasLengthChange || hasIdChange || hasUploadStatusChange) {
+            setMessages(cached);
+            if (isAtBottomRef.current) {
+                setTimeout(() => scrollToBottom("smooth"), 100);
+            }
+        }
+    }, [messagesCache, username, messages.length, scrollToBottom]);
+
+    // CACHE SYNC: Mirror local outgoing messages back to the global provider
+    // This prevents the React warning "Cannot update a component (DataProvider) while rendering Chat"
+    useEffect(() => {
+        if (username && messages.length > 0) {
+            // Only sync if there are optimistic or uploading messages in the local state
+            // to avoid infinite loops with the above useEffect
+            const hasLocalMessages = messages.some(m => m.optimistic || m.uploading);
+            if (hasLocalMessages) {
+                cacheMessages(username, messages);
+            }
+        }
+    }, [messages, username, cacheMessages]);
+
+    const getPresenceStatus = () => {
+        const isReceiverTyping = globalTyping[receiverId || ''];
+        if (isReceiverTyping) return 'typing...';
+
+        const lastSeen = userPresence[receiverId || ''] || receiver?.lastSeen;
+        if (!lastSeen) return '';
+
+        const lastSeenDate = new Date(lastSeen);
+        const now = new Date();
+        const diffInSeconds = Math.floor((now.getTime() - lastSeenDate.getTime()) / 1000);
+
+        // A bit of buffer (40s) to show online since heartbeat is 15s
+        if (diffInSeconds < 40) return 'Online';
+
+        // Format last seen time - use 12h format
+        const timeStr = lastSeenDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        const isToday = lastSeenDate.toDateString() === now.toDateString();
+
+        if (isToday) return `Last seen at ${timeStr}`;
+        const isYesterday = new Date(now.getTime() - 86400000).toDateString() === lastSeenDate.toDateString();
+        if (isYesterday) return `Last seen Yesterday at ${timeStr}`;
+
+        return `Last seen on ${lastSeenDate.toLocaleDateString([], { month: 'short', day: 'numeric' })} at ${timeStr}`;
+    };
+
+    // Keep receiver profile in sync with global contacts (name/avatar changes)
+    useEffect(() => {
+        if (!username || !contacts.length) return;
+        const profile = contacts.find(c => c.username === username);
+        if (profile) setReceiver(profile);
+    }, [contacts, username]);
+
+    // Presence reactive update: force re-render every 30s to update "Last seen" relative time
+    useEffect(() => {
+        const interval = setInterval(() => forceUpdate({}), 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+
+    const handleDownload = useCallback(async (url: string, filename: string) => {
+        try {
+            showToast('Starting download...', 'info');
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.style.display = 'none';
+            link.href = blobUrl;
+            link.download = filename;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(blobUrl);
+            }, 100);
+            showToast('Download complete', 'success');
+        } catch (err) {
+            console.error('Download error, falling back to new tab:', err);
+            // Fallback for CORS issues
+            window.open(url, '_blank');
+            showToast('Opened media securely', 'info');
+        }
+    }, [showToast]);
+
+    const handleScrollToReply = useCallback((id: number) => {
         const target = messageRefs.current.get(id);
         if (target) {
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -413,39 +738,85 @@ const Chat = () => {
         } else {
             showToast('Original message not found', 'info');
         }
-    };
+    }, [showToast]);
 
     const uploadAndSendMedia = useCallback(async (
-        file: Blob | string,
+        file: Blob | string | File,
         type: 'image' | 'video' | 'audio',
-        duration?: string
+        caption?: string,
+        duration?: string,
+        providedPreviewUrl?: string
     ) => {
-        if (!userId || !receiverId) {
-            showToast('User session or receiver not found', 'error');
+        const currentUserId = userIdRef.current;
+        let currentReceiverId = receiverIdRef.current;
+
+        if (!currentUserId) {
+            showToast('User session not found. Please log in again.', 'error');
             return;
         }
 
-        const msgId = Date.now();
+        if (!currentReceiverId) {
+            console.warn('Media upload attempt before receiver profile loaded');
+            showToast('Preparing chat... Please try again in a moment.', 'info');
+            return;
+        }
+
+        // UUID Safety Hook
+        if (currentReceiverId.length < 10) {
+            console.warn(`Invalid UUID detected for receiver (${currentReceiverId}), attempting recovery...`);
+            const fallbackProfile = contactsRef.current?.find(c => c.id === currentReceiverId || c.contact_id === currentReceiverId);
+            if (fallbackProfile && fallbackProfile.contact_id) {
+                currentReceiverId = fallbackProfile.contact_id;
+            } else {
+                showToast('Chat synchronization error. Please refresh.', 'error');
+                return;
+            }
+        }
+
+        const tempId = Date.now() + Math.random();
+        let previewUrl = providedPreviewUrl;
         const label = type.charAt(0).toUpperCase() + type.slice(1);
 
         // 1. Create local preview URL if needed
-        let previewUrl = typeof file === 'string' ? file : URL.createObjectURL(file);
+        if (!previewUrl) {
+            previewUrl = typeof file === 'string' ? file : URL.createObjectURL(file as Blob);
+        }
 
         // 2. Add optimistic message
         const newMsg: Message = {
-            id: msgId,
-            text: type === 'audio' ? '' : `Sent a ${type}`,
-            image: type === 'audio' ? null : previewUrl,
-            audio: type === 'audio' ? previewUrl : null,
-            audioDuration: duration,
-            mediaType: type,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            id: tempId,
+            clientId: tempId,
+            text: caption || '',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
             sender: 'me',
             status: 'sent',
             uploading: true,
             uploadProgress: 0,
+            mediaType: type,
+            image: type !== 'audio' ? previewUrl : null,
+            audio: type === 'audio' ? previewUrl : null,
+            audioDuration: duration,
+            optimistic: true
         };
+
         setMessages(prev => [...prev, newMsg]);
+
+        // Optimistic contact preview update
+        setContacts(prev => {
+            const idx = prev.findIndex(c => c.contact_id === currentReceiverId);
+            if (idx === -1) return prev;
+
+            let preview = type === 'video' ? '?? Video' : (type === 'audio' ? '?? Voice message' : '?? Photo');
+
+            const updated = {
+                ...prev[idx],
+                preview,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+                lastMessageAt: new Date().toISOString()
+            };
+            const rest = prev.filter((_, i) => i !== idx);
+            return [updated, ...rest].sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+        });
 
         try {
             // 3. Convert string (base64/blob URL) to actual Blob if necessary
@@ -457,27 +828,38 @@ const Chat = () => {
                 uploadBlob = file;
             }
 
-            // 4. Determine bucket and path
-            const bucket = type === 'video' ? BUCKETS.chatMedia :
-                (type === 'audio' ? BUCKETS.chatMedia : BUCKETS.chatImages);
-            const ext = type === 'video' ? 'mp4' : (type === 'audio' ? 'webm' : 'jpg');
-            const path = `${userId}/${Date.now()}.${ext}`;
+            // 3.1 COMPRESSION: Fast Upload & Fast Load Optimization
+            if (type === 'image') {
+                try {
+                    const compressed = await compressImage(uploadBlob);
+                    console.log(`Compression success: ${(uploadBlob.size / 1024).toFixed(1)}KB -> ${(compressed.size / 1024).toFixed(1)}KB`);
+                    uploadBlob = compressed;
+                } catch (cErr) {
+                    console.warn('Compression failed, using raw file:', cErr);
+                }
+            }
 
-            // 5. Upload to InsForge
-            const { data: uploadData, error: uploadError } = await insforge.storage
-                .from(bucket)
-                .upload(path, uploadBlob);
+            // 4. Determine bucket
+            const bucketName = type === 'video' ? 'chat-media' :
+                (type === 'audio' ? 'chat-media' : 'chat-images');
 
-            if (uploadError) throw uploadError;
-            if (!uploadData?.url) throw new Error('Upload failed');
+            // 5. Upload to InsForge Storage
+            const filePath = `${currentUserId}/${tempId}-${type}`;
+            const { data: uploadData, error: uploadErr } = await insforge.storage
+                .from(bucketName)
+                .upload(filePath, uploadBlob);
 
+            if (uploadErr || !uploadData?.url) {
+                console.error('Storage upload error:', uploadErr);
+                throw uploadErr || new Error('Upload failed - No URL returned');
+            }
             const mediaUrl = uploadData.url;
 
-            // 6. Save to Database
+            // 6. Save Message reference to Database
             const insertPayload: any = {
-                sender_id: userId,
-                receiver_id: receiverId,
-                text: null,
+                sender_id: currentUserId,
+                receiver_id: currentReceiverId,
+                text: caption || null,
                 is_seen: false,
             };
 
@@ -485,30 +867,56 @@ const Chat = () => {
             else if (type === 'audio') insertPayload.audio_url = mediaUrl;
             else insertPayload.image_url = mediaUrl;
 
-            const { error: dbError } = await insforge.database
+            const { data: dbData, error: dbErr } = await insforge.database
                 .from('messages')
-                .insert(insertPayload);
+                .insert([insertPayload])
+                .select('id')
+                .single();
 
-            if (dbError) throw dbError;
+            if (dbErr) throw dbErr;
 
-            // 7. Update UI with final URL
-            setMessages(prev => prev.map(m =>
-                m.id === msgId ? {
-                    ...m,
-                    image: type === 'audio' ? null : mediaUrl,
-                    audio: type === 'audio' ? mediaUrl : null,
-                    uploading: false,
-                    uploadProgress: 100
-                } : m
-            ));
+            // 7. Update UI with final URL and real database ID
+            const realId = dbData?.id;
+            const updatedMsg = {
+                id: realId || tempId,
+                image: type === 'audio' ? null : mediaUrl,
+                audio: type === 'audio' ? mediaUrl : null,
+                uploading: false,
+                optimistic: false, // Confirmed
+                uploadProgress: 100
+            };
+
+            setMessages(prev => {
+                const updated = prev.map(m =>
+                    m.id === tempId ? { ...m, ...updatedMsg, clientId: tempId } : m
+                );
+                return updated;
+            });
+
+            // 8. Force real-time broadcast to both users (fixes media popping in and out)
+            const publishPayload = {
+                ...insertPayload,
+                id: realId || tempId,
+                created_at: new Date().toISOString()
+            };
+
+            // Publish to receiver
+            insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload).catch(() => { });
+            // Publish to self (other tabs)
+            insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload).catch(() => { });
 
             showToast(`${label} sent`, 'success');
         } catch (err) {
             console.error(`Error sending ${type}:`, err);
             showToast(`Failed to send ${type}`, 'error');
-            setMessages(prev => prev.filter(m => m.id !== msgId));
+            setMessages(prev => prev.filter(m => m.id !== tempId));
+        } finally {
+            // We NO LONGER revoke the object URL immediately here.
+            // React might still be rendering it. The browser will garbage collect it
+            // when the tab is closed, which is fine for small files.
+            // Revoking it here causes the image to disappear before the remote URL loads down the wire.
         }
-    }, [userId, receiverId, showToast]);
+    }, [showToast]);
 
     // Load messages from InsForge DB
     useEffect(() => {
@@ -520,72 +928,144 @@ const Chat = () => {
                 let profile = contacts?.find(c => c.username === username);
 
                 if (!profile) {
-                    const { data, error } = await insforge.database
-                        .from('profiles')
-                        .select('id, name, avatar_url, username')
-                        .eq('username', username)
-                        .single();
-                    if (error || !data) {
+                    try {
+                        const { data, error } = await insforge.database
+                            .from('profiles')
+                            .select()
+                            .eq('username', username)
+                            .single();
+
+                        if (error) throw error;
+                        profile = data;
+                    } catch (err) {
                         setLoading(false);
                         return;
                     }
-                    profile = data;
                 }
 
                 if (profile) {
-                    const pid = profile.id || (profile as any).contact_id;
+                    const pid = (profile as any).contact_id || profile.id;
                     setReceiver(profile);
                     setReceiverId(pid);
 
-                    // 2. Parallelize everything
-                    const [msgRes] = await Promise.all([
-                        // Load messages (limited to 50 for speed)
-                        insforge.database
-                            .from('messages')
-                            .select('*')
-                            .or(`and(sender_id.eq.${userId},receiver_id.eq.${pid}),and(sender_id.eq.${pid},receiver_id.eq.${userId})`)
-                            .order('created_at', { ascending: false })
-                            .limit(50),
+                    // Fetch messages — 50 most recent, newest-first
+                    const msgRes = await insforge.database
+                        .from('messages')
+                        .select(`
+                                                    *,
+                                                    reply_to (
+                                                    id,
+                                                    text,
+                                                    sender_id
+                                                    )
+                                                    `)
+                        .or(`and(sender_id.eq.${userId},receiver_id.eq.${pid}),and(sender_id.eq.${pid},receiver_id.eq.${userId})`)
+                        .order('created_at', { ascending: false })
+                        .limit(50);
 
-                        // Mark messages as seen (Background task)
-                        insforge.database
-                            .from('messages')
-                            .update({ is_seen: true })
-                            .eq('sender_id', pid)
-                            .eq('receiver_id', userId)
-                            .eq('is_seen', false)
-                            .catch(err => console.warn('Silent failure marking messages as seen:', err)),
-
-                        // Ensure contact entry exists (Background task)
-                        insforge.database
-                            .from('contacts')
-                            .upsert({
-                                user_id: userId,
-                                contact_id: pid
-                            }, { onConflict: 'user_id,contact_id' })
-                            .catch(err => console.warn('Silent failure upserting contact:', err))
-                    ]);
-
+                    if (msgRes.error) throw msgRes.error;
                     const dbMsgs = msgRes.data;
 
                     if (dbMsgs) {
-                        const mapped: Message[] = dbMsgs.reverse().map((m: any) => ({
+                        const mapped: Message[] = [...dbMsgs].reverse().map((m: any) => ({
                             id: m.id,
+                            clientId: m.id,
                             text: m.text || '',
-                            image: m.video_url || m.audio_url || m.image_url || null,
+                            image: m.video_url || m.image_url || null,
                             mediaType: m.video_url ? 'video' : (m.audio_url ? 'audio' : (m.image_url ? 'image' : undefined)),
-                            time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            audio: m.audio_url || null,
+                            audioDuration: m.audio_duration || undefined,
+                            time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
                             sender: m.sender_id === userId ? 'me' : 'other',
-                            status: m.is_seen ? 'read' : 'delivered',
+                            status: m.is_seen ? 'read' : (m.is_delivered ? 'delivered' : 'sent'),
+                            replyTo: m.reply_to ? {
+                                id: m.reply_to.id,
+                                text: m.reply_to.text,
+                                username: m.reply_to.sender_id === userId ? 'me' : profile.username
+                            } : null
                         }));
-                        setMessages(mapped);
-                        if (username) cacheMessages(username, mapped);
+
+                        // Find the first unread message from the other person in the
+                        // CHRONOLOGICAL list — capture it now, BEFORE the background
+                        // markAsSeen task changes is_seen in the DB.
+                        const firstUnread = mapped.find(
+                            m => m.sender === 'other' && m.status !== 'read'
+                        );
+                        const unreadMessages = mapped.filter(
+                            m => m.sender === 'other' && m.status !== 'read'
+                        );
+                        if (firstUnread) {
+                            firstUnreadMessageId.current = firstUnread.id as number;
+                            initialUnreadCount.current = unreadMessages.length;
+                        }
+                        setMessages(prev => {
+                            // Keep local outgoing messages (uploading OR optimistic)
+                            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic));
+
+                            // Merge with DB messages, avoiding duplicates by clientId
+                            const filteredLocal = localOnly.filter(local =>
+                                !mapped.some(m => m.id === local.id || m.clientId === local.clientId)
+                            );
+
+                            const finalMsgs = [...mapped, ...filteredLocal];
+                            return finalMsgs;
+                        });
                         setHasMore(dbMsgs.length === 50);
-                        // Clear unread badge for this contact in DataContext immediately
                         setContacts(prev => prev.map((c: any) =>
                             c.contact_id === pid ? { ...c, unread: 0 } : c
                         ));
-                        setTimeout(scrollToBottom, 100);
+
+                        // --- Background tasks (truly fire-and-forget, never block render) ---
+
+                        // 1. Bulk mark unseen messages as seen in a single query (not a loop)
+                        const unseenIds = dbMsgs
+                            .filter((m: any) => m.sender_id === pid && !m.is_seen)
+                            .map((m: any) => m.id);
+                        if (unseenIds.length > 0) {
+                            setTimeout(async () => {
+                                try {
+                                    await insforge.database
+                                        .from('messages')
+                                        .update({ is_seen: true })
+                                        .in('id', unseenIds);
+                                } catch (err) {
+                                    console.warn('Silent markAsSeen failure:', err);
+                                }
+                            }, 0);
+                        }
+
+                        // 2. Ensure contact entry exists
+                        setTimeout(async () => {
+                            try {
+                                const { data: existing } = await insforge.database
+                                    .from('contacts')
+                                    .select('user_id')
+                                    .eq('user_id', userId)
+                                    .eq('contact_id', pid)
+                                    .maybeSingle();
+                                if (!existing) {
+                                    await insforge.database
+                                        .from('contacts')
+                                        .insert([{ user_id: userId, contact_id: pid }]);
+                                }
+                            } catch (err) {
+                                console.warn('Silent contact upsert failure:', err);
+                            }
+                        }, 0);
+                        // otherwise scroll to the bottom as usual.
+                        // Reduced delay from 120ms to 50ms for a more "direct" feel
+                        setTimeout(() => {
+                            if (firstUnread) {
+                                const el = messageRefs.current.get(firstUnread.id as number);
+                                if (el) {
+                                    el.scrollIntoView({ behavior: 'instant', block: 'center' });
+                                } else {
+                                    scrollToBottom('instant' as any);
+                                }
+                            } else {
+                                scrollToBottom('instant' as any);
+                            }
+                        }, 50);
                     }
                 }
             } catch (err) {
@@ -610,25 +1090,46 @@ const Chat = () => {
         setLoadingMore(true);
         try {
             const oldestMsgId = messages[0]?.id;
-            const { data: olderMsgs } = await insforge.database
+            const { data: olderMsgs, error: loadErr } = await insforge.database
                 .from('messages')
-                .select('*')
-                .or(`and(sender_id.eq.${userId}, receiver_id.eq.${receiverId}), and(sender_id.eq.${receiverId}, receiver_id.eq.${userId})`)
+                .select(`
+                                                    *,
+                                                    reply_to (
+                                                    id,
+                                                    text,
+                                                    sender_id
+                                                    )
+                                                    `)
+                .or(`and(sender_id.eq.${userId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${userId})`)
                 .lt('id', oldestMsgId)
                 .order('created_at', { ascending: false })
                 .limit(50);
 
+            if (loadErr) throw loadErr;
+
             if (olderMsgs && olderMsgs.length > 0) {
-                const mapped: Message[] = olderMsgs.reverse().map((m: any) => ({
+                const mapped: Message[] = [...olderMsgs].reverse().map((m: any) => ({
                     id: m.id,
+                    clientId: m.id,
                     text: m.text || '',
-                    image: m.video_url || m.audio_url || m.image_url || null,
+                    image: m.video_url || m.image_url || null,
                     mediaType: m.video_url ? 'video' : (m.audio_url ? 'audio' : (m.image_url ? 'image' : undefined)),
-                    time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    audio: m.audio_url || null,
+                    audioDuration: m.audio_duration || undefined,
+                    time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
                     sender: m.sender_id === userId ? 'me' : 'other',
-                    status: m.is_seen ? 'read' : 'delivered',
+                    status: m.is_seen ? 'read' : (m.is_delivered ? 'delivered' : 'sent'),
+                    replyTo: m.reply_to ? {
+                        id: m.reply_to.id,
+                        text: m.reply_to.text,
+                        username: m.reply_to.sender_id === userId ? 'me' : username!
+                    } : null
                 }));
-                setMessages(prev => [...mapped, ...prev]);
+                setMessages(prev => {
+                    // Simplify: pagination adds to the TOP, so we combine mapped (new old messages) + existing messages
+                    const combined = [...mapped, ...prev.filter(p => !mapped.some(m => m.id === p.id))];
+                    return combined;
+                });
                 setHasMore(olderMsgs.length === 50);
             } else {
                 setHasMore(false);
@@ -640,101 +1141,95 @@ const Chat = () => {
         }
     };
 
-    // Realtime: subscribe to new messages in this chat
+    // Realtime: Sync local state when global cache updates
     useEffect(() => {
-        if (!userId || !receiverId) return;
-        const channel = `chat:${[userId, receiverId].sort().join('-')}`;
+        if (!username || !messagesCache[username]) return;
+        const cached = messagesCache[username];
 
-        const handleNewMessage = (payload: any) => {
-            if (payload.sender_id === userId) return; // skip self
-            const incoming: Message = {
-                id: payload.id,
-                text: payload.text || '',
-                image: payload.video_url || payload.audio_url || payload.image_url || null,
-                mediaType: payload.video_url ? 'video' : (payload.audio_url ? 'audio' : (payload.image_url ? 'image' : undefined)),
-                time: new Date(payload.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                sender: 'other',
-                status: 'delivered',
-            };
-            setMessages(prev => [...prev, incoming]);
-            setIsAtBottom(prev => {
-                if (!prev) {
-                    setUnreadCount(c => {
-                        if (c === 0) firstUnreadIdRef.current = typeof incoming.id === 'string' ? parseInt(incoming.id) : incoming.id as number;
-                        return c + 1;
+        // Optimization: Create a robust key that detects count, last message ID, and ALL statuses to catch ticks
+        const cacheKey = `${cached.length}-${cached[cached.length - 1]?.id}-${cached.map(m => m.status).join('')}`;
+
+        if (lastDBSyncRef.current === cacheKey) return;
+        lastDBSyncRef.current = cacheKey;
+
+        setMessages(prev => {
+            // Keep local outgoing messages (uploading OR optimistic) that aren't yet in the server cache
+            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic));
+
+            // Only keep local messages that don't match anything in the cached list (by internal ID or text)
+            // For media messages (which often have empty text), we MUST match by ID only during upload
+            const filteredLocal = localOnly.filter(local =>
+                !cached.some(c =>
+                    c.id === local.id ||
+                    (local.text && c.text === local.text && c.sender === 'me')
+                )
+            );
+
+            return [...cached, ...filteredLocal];
+        });
+    }, [messagesCache, username]);
+
+    // IntersectionObserver for Unread Banner
+    useEffect(() => {
+        if (!firstUnreadMessageId.current) return;
+
+        let observer: IntersectionObserver | null = null;
+        // Wait for rendering
+        const timer = setTimeout(() => {
+            observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            setTimeout(() => {
+                                firstUnreadMessageId.current = null;
+                                initialUnreadCount.current = 0;
+                            }, 1000);
+                            if (observer) observer.disconnect();
+                        }
                     });
-                    setBadgeText(incoming.text?.length > 35 ? incoming.text.slice(0, 35) + 'â€¦' : (incoming.text || 'New message'));
-                } else {
-                    // Automatically mark as seen if user is at bottom
-                    insforge.database
-                        .from('messages')
-                        .update({ is_seen: true })
-                        .eq('id', payload.id)
-                        .then(({ error }) => {
-                            if (!error) {
-                                // Update local status
-                                setMessages(msgs => msgs.map(m => m.id === payload.id ? { ...m, status: 'read' } : m));
-                            }
-                        });
-                }
-                return prev;
-            });
-        };
+                },
+                { threshold: 0.5 }
+            );
 
-        const handleUpdateMessage = (payload: any) => {
-            if (payload.is_seen) {
-                setMessages(prev => prev.map(m => m.id === payload.id ? { ...m, status: 'read' } : m));
-            }
-        };
-
-        const setup = async () => {
-            try {
-                await insforge.realtime.connect();
-                await insforge.realtime.subscribe(channel);
-                insforge.realtime.on('INSERT_message', handleNewMessage);
-                insforge.realtime.on('UPDATE_message', handleUpdateMessage);
-            } catch (err) {
-                console.error('Chat realtime setup error:', err);
-            }
-        };
-
-        setup();
+            const bannerEl = document.querySelector('.unread-divider');
+            if (bannerEl) observer.observe(bannerEl);
+        }, 500);
 
         return () => {
-            insforge.realtime.off('INSERT_message', handleNewMessage);
-            insforge.realtime.off('UPDATE_message', handleUpdateMessage);
-            insforge.realtime.unsubscribe(channel);
+            clearTimeout(timer);
+            if (observer) observer.disconnect();
         };
-    }, [userId, receiverId]);
+    }, [messages]);
 
-    useEffect(() => {
-        if (showUnreadIndicator) {
-            const timer = setTimeout(() => setShowUnreadIndicator(false), 3000);
-            return () => clearTimeout(timer);
-        } else if (isAtBottom) {
-            scrollToBottom();
-        }
-    }, [showUnreadIndicator, isAtBottom, scrollToBottom]);
 
+    // Consolidated scroll effect
     useEffect(() => {
         if (!showUnreadIndicator && isAtBottom) {
             scrollToBottom();
         }
     }, [messages, showUnreadIndicator, isAtBottom, scrollToBottom]);
 
-    // Auto-cache messages
-    useEffect(() => {
-        if (username && messages.length > 0) {
-            cacheMessages(username, messages);
-        }
-    }, [messages, username, cacheMessages]);
+
+    const processingMediaRef = useRef(false);
 
     useEffect(() => {
-        const checkPendingMedia = () => {
+        const checkPendingMedia = async (retryCount = 0) => {
+            if (processingMediaRef.current) return;
             const media = getPendingMedia();
             if (!media) return;
+
+            // If receiverId isn't loaded yet, retry a few times (WhatsApp-like resilience)
+            if (!receiverIdRef.current && retryCount < 15) {
+                console.log(`Waiting for receiver profile... retry ${retryCount + 1}`);
+                setTimeout(() => checkPendingMedia(retryCount + 1), 100);
+                return;
+            }
+
+            processingMediaRef.current = true;
             clearPendingMedia();
-            uploadAndSendMedia(media.url, media.type === 'video' ? 'video' : 'image');
+            // Pass the raw file/blob if available to avoid failing browser fetch on blob URLs
+            await uploadAndSendMedia(media.file || media.url, media.type === 'video' ? 'video' : 'image', media.caption);
+            processingMediaRef.current = false;
         };
 
         let rafId = 0;
@@ -773,22 +1268,81 @@ const Chat = () => {
         sendMediaDirectlyRef.current = uploadAndSendMedia;
         checkPendingMedia();
 
+        const onFocus = () => {
+            checkPendingMedia();
+
+
+            // Also mark as seen on focus
+            if (receiverIdRef.current) {
+                const unseenIds = messages.filter(m => m.sender === 'other' && m.status !== 'read').map(m => m.id);
+                if (unseenIds.length > 0) {
+                    (async () => {
+                        try {
+                            await insforge.database
+                                .from('messages')
+                                .update({ is_seen: true })
+                                .in('id', unseenIds);
+                        } catch (err) { /* silent */ }
+                    })();
+                }
+            }
+        };
+
         if (window.visualViewport) {
             handleViewportChange();
             window.visualViewport.addEventListener('resize', handleViewportChange);
             window.visualViewport.addEventListener('scroll', handleViewportChange);
         }
-        window.addEventListener('focus', checkPendingMedia);
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onFocus);
 
         return () => {
             cancelAnimationFrame(rafId);
-            window.removeEventListener('focus', checkPendingMedia);
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onFocus);
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener('resize', handleViewportChange);
                 window.visualViewport.removeEventListener('scroll', handleViewportChange);
             }
         };
-    }, [username, showToast, userId, receiverId, scrollToBottom]);
+    }, [username, showToast, userId, receiverId, scrollToBottom, messages]);
+
+    // Smoothly handle keyboard appearance reducing the viewport height
+    useEffect(() => {
+        const handleViewportChange = () => {
+            const vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+
+            // Check if keyboard is likely active (height drastically reduced)
+            const isKeyboardOpen = window.innerHeight < window.screen.height * 0.75;
+            if (isKeyboardOpen) {
+                // Ensure chat container doesn't get pushed under keyboard
+                document.body.classList.add('keyboard-active');
+                setTimeout(() => scrollToBottom('auto'), 100);
+            } else {
+                document.body.classList.remove('keyboard-active');
+            }
+        };
+
+        // Initial set
+        handleViewportChange();
+
+        // Listen for standard resize
+        window.addEventListener('resize', handleViewportChange);
+
+        // Listen to VisualViewport for exact keyboard geometry on modern mobile browsers
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', handleViewportChange);
+        }
+
+        return () => {
+            window.removeEventListener('resize', handleViewportChange);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', handleViewportChange);
+            }
+            document.body.classList.remove('keyboard-active');
+        };
+    }, [scrollToBottom]);
 
     const handleGalleryClick = () => {
         galleryInputRef.current?.click();
@@ -799,21 +1353,24 @@ const Chat = () => {
         if (!file) return;
         e.target.value = '';
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const url = event.target?.result as string;
-            const mediaType = file.type.startsWith('video') ? 'video' : 'image';
-            if (sendMediaDirectlyRef.current) {
-                sendMediaDirectlyRef.current(url, mediaType);
-            }
-        };
-        reader.readAsDataURL(file);
+        const mediaType = file.type.startsWith('video') ? 'video' : 'image';
+
+        // Use createObjectURL for instant optimistic UI preview without blocking UI stringifying large blobs
+        const instantUrl = URL.createObjectURL(file);
+
+        if (sendMediaDirectlyRef.current) {
+            // Pass the raw file object instead of the data URL so upload works properly
+            sendMediaDirectlyRef.current(file, mediaType, undefined, undefined, instantUrl);
+        }
     };
 
     useEffect(() => {
         if (isRecording && !isPaused) {
             recordingInterval.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    recordingTimeRef.current = prev + 1; // Keep ref in sync
+                    return prev + 1;
+                });
             }, 1000);
         } else {
             clearInterval(recordingInterval.current);
@@ -844,16 +1401,14 @@ const Chat = () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
                 if (shouldSendAudio.current) {
-                    const duration = formatTime(recordingTime);
+                    // Use ref (not state) to avoid stale closure — state may be 0 inside here
+                    const duration = formatTime(recordingTimeRef.current);
                     // Unified flow handles storage + DB
                     await uploadAndSendMedia(audioBlob, 'audio', duration);
                 }
 
                 // CRITICAL: Cleanup stream tracks to turn off the mic indicator
-                stream.getTracks().forEach(track => {
-                    track.stop();
-                    console.log("Track stopped:", track.kind);
-                });
+                stream.getTracks().forEach(track => track.stop());
             };
 
             recorder.start();
@@ -880,31 +1435,26 @@ const Chat = () => {
         setIsRecording(false);
     };
 
-    const handleUnblock = async () => {
+    const handleUnblock = useCallback(async () => {
         if (!userId || !receiverId) return;
+        setActionLoading(true);
+        setLoadingMessage('Unblocking...');
         try {
-            await insforge.database
+            const { error } = await insforge.database
                 .from('blocked_users')
                 .delete()
-                .eq('user_id', userId)
+                .eq('blocker_id', userId)   // Fixed: was 'user_id'
                 .eq('blocked_id', receiverId);
-
+            if (error) throw error;
             setIsBlocked(false);
-            const systemMsg: Message = {
-                id: Date.now(),
-                text: "You unblocked this contact.",
-                time: "",
-                sender: "me",
-                status: "read"
-            };
-            setMessages(prev => [...prev, systemMsg]);
-            setShowMenu(false);
             showToast('User unblocked', 'success');
         } catch (err) {
             console.error('Unblock error:', err);
             showToast('Failed to unblock user', 'error');
+        } finally {
+            setActionLoading(false);
         }
-    };
+    }, [userId, receiverId, showToast]);
 
     const handleSendMessage = async (e: any) => {
         if (e) e.preventDefault();
@@ -920,7 +1470,23 @@ const Chat = () => {
         }
 
         if (!inputText.trim()) return;
-        if (!userId || !receiverId) return;
+
+        const currentUserId = userIdRef.current;
+        let currentReceiverId = receiverIdRef.current;
+
+        if (!currentUserId || !currentReceiverId) return;
+
+        // UUID Safety Hook
+        if (currentReceiverId.length < 10) {
+            console.warn(`Invalid UUID detected for receiver (${currentReceiverId}), attempting recovery...`);
+            const fallbackProfile = contactsRef.current?.find(c => c.id === currentReceiverId || c.contact_id === currentReceiverId);
+            if (fallbackProfile && fallbackProfile.contact_id) {
+                currentReceiverId = fallbackProfile.contact_id;
+            } else {
+                showToast('Chat synchronization error. Please refresh.', 'error');
+                return;
+            }
+        }
 
         const tempId = Date.now() + Math.floor(Math.random() * 1000);
         const textToSend = inputText;
@@ -928,18 +1494,38 @@ const Chat = () => {
 
         const newMsg: Message = {
             id: tempId,
+            clientId: tempId,
             text: textToSend,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
             sender: 'me',
             status: 'sent',
             replyTo: currentReply ? {
                 id: currentReply.id,
                 text: currentReply.text,
                 username: currentReply.sender === 'me' ? 'me' : username!
-            } : null
+            } : null,
+            optimistic: true
         };
 
-        setMessages(prev => [...prev, newMsg]);
+        setMessages(prev => {
+            const next = [...prev, newMsg];
+            return next;
+        });
+
+        // Optimistic contact preview update
+        setContacts((prev: any[]) => {
+            const idx = prev.findIndex(c => c.contact_id === receiverId);
+            if (idx === -1) return prev;
+            const updated = {
+                ...prev[idx],
+                preview: textToSend.substring(0, 45),
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+                lastMessageAt: new Date().toISOString()
+            };
+            const rest = prev.filter((_, i) => i !== idx);
+            return [updated, ...rest].sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+        });
+
         setInputText('');
         setReplyingTo(null);
         setIsTyping(false);
@@ -952,17 +1538,48 @@ const Chat = () => {
         }, 0);
 
         // Save to InsForge DB
-        const { error } = await insforge.database
-            .from('messages')
-            .insert({
-                sender_id: userId,
-                receiver_id: receiverId,
+        try {
+            const { data: dbData, error } = await insforge.database
+                .from('messages')
+                .insert([{
+                    sender_id: currentUserId,
+                    receiver_id: currentReceiverId,
+                    text: textToSend,
+                    image_url: null,
+                    is_seen: false,
+                    reply_to: currentReply?.id
+                }])
+                .select('id')
+                .single();
+
+            if (error) throw error;
+
+            // 4. Force real-time broadcast to both users
+            const publishPayload = {
+                id: dbData?.id || tempId,
+                sender_id: currentUserId,
+                receiver_id: currentReceiverId,
                 text: textToSend,
                 image_url: null,
                 is_seen: false,
-            });
+                reply_to: currentReply?.id,
+                created_at: new Date().toISOString()
+            };
 
-        if (error) {
+            // Publish to receiver
+            insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload).catch(() => { });
+            // Publish to self (other tabs)
+            insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload).catch(() => { });
+
+            // Replace tempId with real database ID
+            if (dbData?.id) {
+                setMessages(prev => {
+                    const updated = prev.map(m => m.id === tempId ? { ...m, id: dbData.id, clientId: tempId, optimistic: false } : m);
+                    if (username) setTimeout(() => cacheMessages(username, updated), 0);
+                    return updated;
+                });
+            }
+        } catch (error: any) {
             console.error('handleSendMessage error:', error);
             showToast('Failed to send message', 'error');
             setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -975,13 +1592,42 @@ const Chat = () => {
             setActionLoading(true);
             setLoadingMessage('Deleting...');
             try {
-                // Delete from DB if it's the user's own message
-                await insforge.database
+                // Soft delete by updating text to placeholder
+                const { error } = await insforge.database
                     .from('messages')
-                    .delete()
-                    .eq('id', longPressedMsg.id)
-                    .eq('sender_id', userId);
-                setMessages(prev => prev.map(m => m.id === longPressedMsg.id ? { ...m, text: 'This message was deleted', status: 'read' as const, image: null } : m));
+                    .update({
+                        text: 'This message was deleted',
+                        image_url: null,
+                        video_url: null,
+                        audio_url: null,
+                        is_deleted: true
+                    })
+                    .eq('id', longPressedMsg.id);
+
+                if (error) throw error;
+
+                // Optimistic update for sender is already done, but real-time UPDATE_message will sync others
+                setMessages(prev => prev.map(m => m.id === longPressedMsg.id ? {
+                    ...m,
+                    text: 'This message was deleted',
+                    status: 'read' as const,
+                    image: null,
+                    audio: null,
+                    mediaType: undefined
+                } : m));
+
+                // Optimistic contact preview update
+                setContacts((prev: any[]) => {
+                    const idx = prev.findIndex(c => c.contact_id === receiverId);
+                    if (idx === -1) return prev;
+                    const updated = {
+                        ...prev[idx],
+                        preview: 'This message was deleted'
+                    };
+                    const rest = prev.filter((_, i) => i !== idx);
+                    return [updated, ...rest]; // Maintain current sort order
+                });
+
                 showToast('Message deleted for everyone', 'info');
             } catch (err) {
                 console.error("Delete message error:", err);
@@ -989,7 +1635,7 @@ const Chat = () => {
             } finally {
                 setActionLoading(false);
             }
-        } else {
+        } else if (longPressedMsg) {
             setMessages(prev => prev.filter(m => m.id !== longPressedMsg.id));
             showToast('Message deleted for you', 'info');
         }
@@ -997,8 +1643,10 @@ const Chat = () => {
     };
 
     const copyMessage = () => {
-        navigator.clipboard.writeText(longPressedMsg.text);
-        showToast('Message copied to clipboard', 'info');
+        if (longPressedMsg) {
+            navigator.clipboard.writeText(longPressedMsg.text);
+            showToast('Message copied to clipboard', 'info');
+        }
         setLongPressedMsg(null);
     };
 
@@ -1007,18 +1655,33 @@ const Chat = () => {
         setShowBlockConfirm(true);
     };
 
-    const confirmBlock = () => {
-        setIsBlocked(true);
+    const confirmBlock = async () => {
+        if (!userId || !receiverId) return;
         setShowBlockConfirm(false);
-        const systemMsg: Message = {
-            id: Date.now(),
-            text: "You blocked this contact. Tap to unblock.",
-            time: "",
-            sender: "me",
-            status: "read"
-        };
-        setMessages([...messages, systemMsg]);
-        showToast(`${username} has been blocked`, 'error');
+        setActionLoading(true);
+        setLoadingMessage('Blocking user...');
+        try {
+            const { error } = await insforge.database
+                .from('blocked_users')
+                .insert([{ blocker_id: userId, blocked_id: receiverId }]);
+            if (error) throw error;
+
+            setIsBlocked(true);
+            const systemMsg: Message = {
+                id: Date.now(),
+                text: "You blocked this contact. Tap to unblock.",
+                time: "",
+                sender: "me",
+                status: "read"
+            };
+            setMessages(prev => [...prev, systemMsg]);
+            showToast(`${username} has been blocked`, 'info');
+        } catch (err: any) {
+            console.error('Block error:', err);
+            showToast('Failed to block user', 'error');
+        } finally {
+            setActionLoading(false);
+        }
     };
 
 
@@ -1032,14 +1695,24 @@ const Chat = () => {
         setActionLoading(true);
         setLoadingMessage('Clearing history...');
         try {
-            const { error } = await insforge.database
+            const { error: deleteErr } = await insforge.database
                 .from('messages')
                 .delete()
-                .or(`and(sender_id.eq.${userId}, receiver_id.eq.${receiverId}), and(sender_id.eq.${receiverId}, receiver_id.eq.${userId})`);
+                .or(`and(sender_id.eq.${userId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${userId})`);
 
-            if (error) throw error;
+            if (deleteErr) throw deleteErr;
 
             setMessages([]);
+
+            // Optimistic contact preview update
+            setContacts((prev: any[]) => {
+                const idx = prev.findIndex(c => c.contact_id === receiverId);
+                if (idx === -1) return prev;
+                const updated = { ...prev[idx], preview: '', time: '' };
+                const rest = prev.filter((_, i) => i !== idx);
+                return [updated, ...rest];
+            });
+
             setShowClearConfirm(false);
             showToast('Chat history deleted permanently', 'info');
         } catch (err) {
@@ -1064,30 +1737,30 @@ const Chat = () => {
             className="chat-container"
             style={{
                 backgroundColor: chatWallpaper || 'var(--chat-bg-default)',
-                backgroundImage: chatWallpaper ? 'none' : undefined,
+                backgroundImage: (chatWallpaper && chatWallpaper !== 'none') ? 'none' : undefined,
             }}
         >
             {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
             <nav className="chat-messages-navbar">
                 <div className="chat-header-left">
-                    <button className="nav-icon-btn" onClick={() => navigate(-1)}>
+                    <button className="nav-icon-btn" onClick={() => navigate('/home')}>
                         <ArrowLeft size={24} color="var(--text-secondary)" />
                     </button>
                     {/* NO app logo here - removed per user request */}
-                    <div className="chat-header-user" onClick={() => navigate(`/profile/${username}`)}>
+                    <div className="chat-header-user" onClick={() => navigate(`/profile/${username}`, { state: { profile: receiver } })}>
                         <div className="chat-header-avatar-container">
                             <Avatar
-                                src={receiver?.avatar_url}
+                                src={receiver?.avatar || receiver?.avatar_url}
                                 name={receiver?.name || username}
                                 size={40}
                                 className="chat-header-avatar"
                             />
-                            <div className="chat-header-status-dot" />
+                            {getPresenceStatus() === 'Online' && <div className="chat-header-status-dot" />}
                         </div>
                         <div className="chat-header-text-container">
                             <span className="chat-header-name">{receiver?.name || `@${username}`}</span>
                             <span className="chat-header-status">
-                                {isTyping ? 'typing...' : `@${username}`}
+                                {getPresenceStatus()}
                             </span>
                         </div>
                     </div>
@@ -1104,19 +1777,28 @@ const Chat = () => {
                     </button>
                 </div>
 
-                {showMenu && (
-                    <>
-                        <div className="chat-dropdown-backdrop" onClick={() => setShowMenu(false)} />
-                        <div className="chat-dropdown">
-                            <div className="dropdown-item" onClick={() => navigate(`/profile/${username}`)}>View Profile</div>
-                            <div className="dropdown-item" onClick={() => setShowMenu(false)}>Search in chat</div>
-                            <div className="dropdown-item" onClick={() => navigate('/theme-appearance')}>Change Theme</div>
-                            <div className="dropdown-item" onClick={isBlocked ? handleUnblock : handleBlock}>
-                                {isBlocked ? 'Unblock user' : 'Block user'}
+                {showMenu && createPortal(
+                    <div className="overlay-backdrop" onClick={() => setShowMenu(false)} style={{ zIndex: 3000, position: 'fixed', inset: 0, transform: 'none', backgroundColor: 'transparent', backdropFilter: 'none' }}>
+                        <div className="profile-glass-card" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '60px', right: '16px', padding: '8px', borderRadius: '16px', minWidth: '220px', backgroundColor: 'var(--surface-color)', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div className="menu-item" onClick={() => { setShowMenu(false); navigate(`/profile/${username}`, { state: { profile: receiver } }); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', fontSize: '15px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                <User size={18} color="var(--text-secondary)" /> View Profile
                             </div>
-                            <div className="dropdown-item" onClick={handleClearChat}>Clear chat</div>
+                            <div className="menu-item" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', fontSize: '15px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                <Search size={18} color="var(--text-secondary)" /> Search in chat
+                            </div>
+                            <div className="menu-item" onClick={() => { setShowMenu(false); navigate('/theme-appearance'); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', fontSize: '15px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                <Palette size={18} color="var(--text-secondary)" /> Change Theme
+                            </div>
+                            <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
+                            <div className="menu-item" onClick={() => { setShowMenu(false); isBlocked ? handleUnblock() : handleBlock(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', fontSize: '15px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600, color: '#ef4444' }}>
+                                <Ban size={18} color="#ef4444" /> {isBlocked ? 'Unblock user' : 'Block user'}
+                            </div>
+                            <div className="menu-item" onClick={() => { setShowMenu(false); handleClearChat(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', fontSize: '15px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600, color: '#ef4444' }}>
+                                <Trash2 size={18} color="#ef4444" /> Clear chat
+                            </div>
                         </div>
-                    </>
+                    </div>,
+                    document.body
                 )}
             </nav>
 
@@ -1124,18 +1806,24 @@ const Chat = () => {
                 className="chat-messages-area"
                 onScroll={(e) => {
                     const target = e.currentTarget;
-                    const atBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
-                    setIsAtBottom(atBottom);
-                    if (atBottom) {
-                        setUnreadCount(0);
-                        setBadgeText('');
-                        firstUnreadIdRef.current = null;
-                    }
+                    // Throttle state update to once per frame
+                    requestAnimationFrame(() => {
+                        const atBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
+                        if (atBottom !== isAtBottomRef.current) {
+                            isAtBottomRef.current = atBottom;
+                            setIsAtBottom(atBottom);
+                            if (atBottom) {
+                                setUnreadCount(0);
+                                setBadgeText('');
+                                firstUnreadIdRef.current = null;
+                            }
+                        }
+                    });
                 }}
             >
 
                 <div className="system-message-badge">
-                    ðŸ”’ Messages are end-to-end encrypted. No one outside of this chat, not even Masum Chats, can read or listen to them.
+                    ?? Messages are end-to-end encrypted. No one outside of this chat, not even Masum Chats, can read or listen to them.
                 </div>
                 {hasMore && (
                     <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -1161,24 +1849,52 @@ const Chat = () => {
                         </button>
                     </div>
                 )}
-                {messages.map((msg, index) => (
-                    <SwipeableMessage
-                        key={msg.id}
-                        msg={msg}
-                        index={index}
-                        messages={messages}
-                        showUnreadIndicator={showUnreadIndicator}
-                        onReply={setReplyingTo}
-                        onLongPress={(m: any) => setLongPressedMsg(m)}
-                        onPreviewImage={setPreviewMedia}
-                        handleUnblock={handleUnblock}
-                        onScrollToReply={handleScrollToReply}
-                        messageRef={(el: HTMLDivElement) => {
-                            if (el) messageRefs.current.set(msg.id, el);
-                            else messageRefs.current.delete(msg.id);
-                        }}
-                    />
-                ))}
+                {messages.map((msg, index) => {
+                    const prevMsg = index > 0 ? messages[index - 1] : null;
+                    const msgDate = new Date(msg.id < 10000000000 ? msg.id : (msg.optimistic ? Date.now() : msg.id));
+                    const prevDate = prevMsg ? new Date(prevMsg.id < 10000000000 ? prevMsg.id : (prevMsg.optimistic ? Date.now() : prevMsg.id)) : null;
+
+                    let showDateSeparator = false;
+                    let dateLabel = '';
+
+                    if (!prevDate || msgDate.toDateString() !== prevDate.toDateString()) {
+                        showDateSeparator = true;
+                        const now = new Date();
+                        if (msgDate.toDateString() === now.toDateString()) {
+                            dateLabel = 'Today';
+                        } else {
+                            const yesterday = new Date(now);
+                            yesterday.setDate(now.getDate() - 1);
+                            if (msgDate.toDateString() === yesterday.toDateString()) {
+                                dateLabel = 'Yesterday';
+                            } else {
+                                dateLabel = msgDate.toLocaleDateString([], { day: 'numeric', month: 'long', year: msgDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+                            }
+                        }
+                    }
+
+                    return (
+                        <SwipeableMessage
+                            key={msg.clientId || msg.id}
+                            msg={msg}
+                            onReply={setReplyingTo}
+                            onLongPress={setLongPressedMsg}
+                            onPreviewImage={setPreviewMedia}
+                            handleUnblock={handleUnblock}
+                            onScrollToReply={handleScrollToReply}
+                            messageRef={(el: HTMLDivElement) => {
+                                if (el) messageRefs.current.set(msg.id, el);
+                                else messageRefs.current.delete(msg.id);
+                            }}
+                            firstUnreadMessageId={firstUnreadMessageId}
+                            initialUnreadCount={initialUnreadCount}
+                            navigate={navigate}
+                            username={username}
+                            showDateSeparator={showDateSeparator}
+                            dateLabel={dateLabel}
+                        />
+                    );
+                })}
 
                 {isTyping && (
                     <div className="typing-bubble">
@@ -1191,229 +1907,388 @@ const Chat = () => {
             </div>
 
             {/* WhatsApp-style new message badge - bottom center, above input */}
-            {!isAtBottom && unreadCount > 0 && (
-                <div className="new-msg-float-badge" onClick={() => {
-                    // Scroll to first unseen message, not just the bottom
-                    const firstId = firstUnreadIdRef.current;
-                    if (firstId) {
-                        const el = messageRefs.current.get(firstId);
-                        if (el) {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el.classList.add('highlight-message');
-                            setTimeout(() => el.classList.remove('highlight-message'), 2000);
+            {
+                !isAtBottom && (
+                    <div className="new-msg-float-badge premium-float" onClick={() => {
+                        if (unreadCount > 0) {
+                            const firstId = firstUnreadIdRef.current;
+                            if (firstId) {
+                                const el = messageRefs.current.get(firstId);
+                                if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    el.classList.add('highlight-message');
+                                    setTimeout(() => el.classList.remove('highlight-message'), 2000);
+                                }
+                            } else {
+                                scrollToBottom();
+                            }
+                        } else {
+                            scrollToBottom();
                         }
-                    } else {
-                        scrollToBottom();
-                    }
-                    setUnreadCount(0);
-                    setBadgeText('');
-                    firstUnreadIdRef.current = null;
-                }}>
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style={{ marginRight: 5, flexShrink: 0 }}><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z" transform="rotate(180 12 12)" /></svg>
-                    <span className="new-msg-badge-text">{badgeText || `${unreadCount} new ${unreadCount === 1 ? 'message' : 'messages'}`}</span>
-                </div>
-            )}
-
-            {isBlocked ? (
-                <div className="blocked-bar">
-                    <button className="blocked-btn danger" onClick={handleClearChat}>
-                        <Trash2 size={18} /> Delete chat
-                    </button>
-                    <button className="blocked-btn" onClick={handleUnblock}>
-                        <RefreshCcw size={18} /> Unblock contact
-                    </button>
-                </div>
-            ) : (
-                <div className="chat-input-wrapper">
-                    {replyingTo && (
-                        <div className="reply-preview-container">
-                            <div className="reply-preview-content">
-                                <span className="reply-preview-name">
-                                    Replying to {replyingTo.sender === 'me' ? 'yourself' : username}
-                                </span>
-                                <span className="reply-preview-text">{replyingTo.text}</span>
-                            </div>
-                            <button
-                                className="reply-close-btn"
-                                onMouseDown={(e) => e.preventDefault()} // Prevent focus loss (keeps keyboard open)
-                                onClick={() => setReplyingTo(null)}
-                            >
-                                <X size={18} />
-                            </button>
+                        setUnreadCount(0);
+                        setBadgeText('');
+                        firstUnreadIdRef.current = null;
+                    }}>
+                        <div className="float-icon-wrapper">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z" transform="rotate(180 12 12)" /></svg>
+                            {unreadCount > 0 && <span className="float-unread-dot">{unreadCount}</span>}
                         </div>
-                    )}
-                    <input
-                        type="file"
-                        ref={galleryInputRef}
-                        style={{ display: 'none' }}
-                        accept="image/*,video/*"
-                        onChange={handleFileChange}
-                    />
-                    {isRecording ? (
-                        <div className="recording-overlay animating">
-                            <button className="recording-btn discard-btn" onClick={() => stopRecording(false)} title="Discard">
-                                <Trash2 size={24} />
-                            </button>
-                            <div className="recording-center-area">
-                                <div className="recording-live-indicator">
-                                    <div className="pulse-circle" />
-                                    <span className="recording-timer">{formatTime(recordingTime)}</span>
-                                </div>
-                                <div className="waveform-animation-container">
-                                    {[...Array(18)].map((_, i) => (
-                                        <div
-                                            key={i}
-                                            className="waveform-bar oscillate"
-                                            style={{
-                                                animationDelay: `${i * 0.08}s`,
-                                                height: '12px'
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                            <button className="recording-btn send-btn" onClick={() => stopRecording(true)} title="Send">
-                                <Send size={24} color="white" />
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="chat-input-main-area">
-                            <div className="input-pill-container modern-input">
-                                <button className="pill-icon plus-btn" title="More" onClick={() => showToast('More options coming soon!', 'info')}>
-                                    <Plus size={22} />
-                                </button>
-                                <textarea
-                                    ref={messageInputRef}
-                                    rows={1}
-                                    autoComplete="off"
-                                    autoCorrect="off"
-                                    autoCapitalize="sentences"
-                                    spellCheck={true}
-                                    placeholder="Message"
-                                    value={inputText}
-                                    onChange={(e) => {
-                                        setInputText(e.target.value);
-                                        // Handle auto-grow
-                                        const target = e.target;
-                                        target.style.height = 'auto'; // Reset height
-                                        const newHeight = Math.min(target.scrollHeight, 120); // Cap at approx 5 lines
-                                        target.style.height = `${newHeight}px`;
-                                        target.style.overflowY = target.scrollHeight > 120 ? 'auto' : 'hidden';
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
-                                            handleSendMessage(null);
-                                        }
-                                    }}
-                                />
-                                <div className="input-right-icons">
-                                    <button className="pill-icon" title="Attachments" onClick={handleGalleryClick}>
-                                        <Paperclip size={22} />
-                                    </button>
-                                    {!inputText.trim() && (
-                                        <button className="pill-icon" title="Camera" onClick={() => navigate('/camera')}>
-                                            <Camera size={22} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            <button
-                                className={`mic-action-btn ${inputText.trim() ? 'send-mode' : ''}`}
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => inputText.trim() ? handleSendMessage(null) : startRecording()}
-                            >
-                                {inputText.trim() ? <Send size={24} color="white" /> : <Mic size={24} color="white" />}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {longPressedMsg && (
-                <div className="overlay-backdrop" onClick={() => setLongPressedMsg(null)}>
-                    <div className="context-menu-card" onClick={(e) => e.stopPropagation()}>
-                        <div className="menu-item" onClick={copyMessage}>
-                            <Copy size={20} /> Copy
-                        </div>
-                        <div className="menu-item" onClick={() => { setReplyingTo(longPressedMsg); setLongPressedMsg(null); }}>
-                            <Reply size={20} /> Reply
-                        </div>
-                        <div className="menu-item" onClick={() => deleteMessage(false)}>
-                            <Trash2 size={20} /> Delete for me
-                        </div>
-                        {longPressedMsg.sender === 'me' && (
-                            <div className="menu-item" onClick={() => deleteMessage(true)}>
-                                <Trash2 size={20} /> Delete for everyone
-                            </div>
-                        )}
-                        <div className="menu-item cancel" onClick={() => setLongPressedMsg(null)}>
-                            <X size={20} /> Cancel
-                        </div>
+                        {badgeText && <span className="new-msg-badge-text">{badgeText}</span>}
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showBlockConfirm && (
-                <div className="chat-modal-overlay">
-                    <div className="chat-modal-card">
-                        <h3 className="chat-modal-title">Block {username}?</h3>
-                        <p className="chat-modal-text">
-                            Blocked contacts will no longer be able to call you or send you messages.
-                        </p>
-                        <div className="chat-modal-actions">
-                            <button className="chat-modal-btn cancel" onClick={() => setShowBlockConfirm(false)}>Cancel</button>
-                            <button className="chat-modal-btn danger" onClick={confirmBlock}>Block</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showClearConfirm && (
-                <div className="chat-modal-overlay">
-                    <div className="chat-modal-card">
-                        <h3 className="chat-modal-title">Delete chat?</h3>
-                        <p className="chat-modal-text">
-                            Are you sure you want to delete the entire chat history with {username}? This action cannot be undone.
-                        </p>
-                        <div className="chat-modal-actions">
-                            <button className="chat-modal-btn cancel" onClick={() => setShowClearConfirm(false)}>Cancel</button>
-                            <button className="chat-modal-btn danger" onClick={executeClearChat}>Delete</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {previewMedia && (
-                <div className="media-preview-overlay" onClick={() => setPreviewMedia(null)}>
-                    <div className="media-preview-topbar" onClick={(e) => e.stopPropagation()}>
-                        <button className="media-preview-close" onClick={() => setPreviewMedia(null)}>
-                            <X size={24} color="white" />
+            {
+                isBlocked ? (
+                    <div className="blocked-bar">
+                        <button className="blocked-btn danger" onClick={handleClearChat}>
+                            <Trash2 size={18} /> Delete chat
                         </button>
-                        <a
-                            className="media-preview-download"
-                            href={previewMedia.url}
-                            download={`masum-media-${Date.now()}.${previewMedia.type === 'video' ? 'mp4' : 'jpg'}`}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            â¬‡ Download
-                        </a>
+                        <button className="blocked-btn" onClick={handleUnblock}>
+                            <RefreshCcw size={18} /> Unblock contact
+                        </button>
                     </div>
-                    <div className="media-preview-container">
-                        {previewMedia.type === 'video' ? (
-                            <VideoPreviewPlayer src={previewMedia.url} />
+                ) : (
+                    <div className="chat-input-wrapper">
+                        {replyingTo && (
+                            <div className="reply-preview-container">
+                                <div className="reply-preview-content">
+                                    <span className="reply-preview-name">
+                                        Replying to {replyingTo.sender === 'me' ? 'yourself' : username}
+                                    </span>
+                                    <span className="reply-preview-text">{replyingTo.text}</span>
+                                </div>
+                                <button
+                                    className="reply-close-btn"
+                                    onMouseDown={(e) => e.preventDefault()} // Prevent focus loss (keeps keyboard open)
+                                    onClick={() => setReplyingTo(null)}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        )}
+                        <input
+                            type="file"
+                            ref={galleryInputRef}
+                            style={{ display: 'none' }}
+                            accept="image/*,video/*"
+                            onChange={handleFileChange}
+                        />
+                        {isRecording ? (
+                            <div className="recording-overlay animating" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', background: 'var(--surface-color)', borderRadius: '30px', margin: '4px 8px', height: '48px', flex: 1, boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                                <button className="recording-btn discard-btn" onClick={() => stopRecording(false)} title="Discard" style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                                    <Trash2 size={20} />
+                                    <span style={{ fontSize: '14px', fontWeight: 600 }}>Cancel</span>
+                                </button>
+                                <div className="recording-center-area" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div className="recording-live-indicator" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444', fontWeight: 600 }}>
+                                        <div className="pulse-circle" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444', animation: 'pulse 1.5s infinite' }} />
+                                        <span className="recording-timer" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatTime(recordingTime)}</span>
+                                    </div>
+                                    <div className="waveform-animation-container" style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '24px' }}>
+                                        {[...Array(8)].map((_, i) => (
+                                            <div
+                                                key={i}
+                                                className="waveform-bar oscillate"
+                                                style={{
+                                                    animationDelay: `${i * 0.15}s`,
+                                                    height: `${Math.max(4, Math.random() * 16)}px`,
+                                                    width: '3px',
+                                                    backgroundColor: 'var(--primary-color)',
+                                                    borderRadius: '2px'
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                <button className="recording-btn send-btn" onClick={() => stopRecording(true)} title="Send" style={{ background: 'var(--primary-color)', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer' }}>
+                                    <Send size={18} color="white" />
+                                </button>
+                            </div>
                         ) : (
-                            <img
-                                src={previewMedia.url}
-                                alt="Preview"
-                                className="media-preview-img"
-                                onClick={(e) => e.stopPropagation()}
-                            />
+                            <div className="chat-input-main-area w-full flex items-end flex-wrap gap-2 px-2 py-1">
+                                <div className="input-pill-container modern-input flex-1 w-full min-w-0 flex items-center bg-surface-color rounded-3xl px-3 min-h-[48px] border border-border-color shadow-sm">
+                                    <button
+                                        className="pill-icon plus-btn"
+                                        title="More Options"
+                                        onClick={() => setShowMediaSheet(true)}
+                                        disabled={loading || !receiverId}
+                                        style={{ opacity: (loading || !receiverId) ? 0.5 : 1 }}
+                                    >
+                                        <Plus size={22} />
+                                    </button>
+                                    <textarea
+                                        ref={messageInputRef}
+                                        className="flex-1 min-w-[50px] bg-transparent resize-none border-none outline-none overflow-hidden m-0 p-2"
+                                        rows={1}
+                                        autoComplete="off"
+                                        autoCorrect="off"
+                                        autoCapitalize="sentences"
+                                        spellCheck={true}
+                                        placeholder="Message"
+                                        value={inputText}
+                                        onChange={(e) => {
+                                            setInputText(e.target.value);
+                                            // Handle auto-grow
+                                            const target = e.target;
+                                            target.style.height = 'auto'; // Reset height
+                                            const newHeight = Math.min(target.scrollHeight, 120); // Cap at approx 5 lines
+                                            target.style.height = `${newHeight}px`;
+                                            target.style.overflowY = target.scrollHeight > 120 ? 'auto' : 'hidden';
+                                            // Broadcast typing event with throttle to avoid flickering
+                                            const lastTyping = (target as any).lastTypingBroadcast || 0;
+                                            if (Date.now() - lastTyping > 2000) {
+                                                (target as any).lastTypingBroadcast = Date.now();
+                                                insforge.realtime.publish(
+                                                    'presence:global',
+                                                    'typing',
+                                                    { sender_id: userId, receiver_id: receiverId }
+                                                ).catch(() => { /* silent */ });
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSendMessage(null);
+                                            }
+                                        }}
+                                    />
+                                    <div className="input-right-icons flex shrink-0 items-center justify-end">
+                                        <button
+                                            className="pill-icon"
+                                            title="Attachments"
+                                            onClick={handleGalleryClick}
+                                            disabled={loading || !receiverId}
+                                            style={{ opacity: (loading || !receiverId) ? 0.5 : 1 }}
+                                        >
+                                            <Paperclip size={22} />
+                                        </button>
+                                        {!inputText.trim() && (
+                                            <button
+                                                className="pill-icon"
+                                                title="Camera"
+                                                onClick={() => navigate('/camera')}
+                                                disabled={loading || !receiverId}
+                                                style={{ opacity: (loading || !receiverId) ? 0.5 : 1 }}
+                                            >
+                                                <Camera size={22} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    className={`mic-action-btn ${inputText.trim() ? 'send-mode' : ''}`}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => inputText.trim() ? handleSendMessage(null) : startRecording()}
+                                >
+                                    <Send size={24} color="white" className="send-icon" />
+                                    <Mic size={24} color="white" className="mic-icon" />
+                                </button>
+                            </div>
                         )}
                     </div>
+                )
+            }
+
+            {
+                longPressedMsg && createPortal(
+                    <div className="overlay-backdrop" onClick={() => setLongPressedMsg(null)} style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }}>
+                        <div className="profile-glass-card" onClick={(e) => e.stopPropagation()} style={{ padding: '8px', borderRadius: '24px', minWidth: '240px', maxWidth: '80%', backgroundColor: 'var(--surface-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div className="menu-item" onClick={copyMessage} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <Copy size={20} color="var(--primary-color)" /> Copy Text
+                            </div>
+                            <div className="menu-item" onClick={() => { setReplyingTo(longPressedMsg); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <Reply size={20} color="var(--primary-color)" /> Reply
+                            </div>
+                            <div className="menu-item" onClick={() => deleteMessage(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <Trash2 size={20} color="var(--text-secondary)" /> Delete for me
+                            </div>
+                            {longPressedMsg.sender === 'me' && (
+                                <div className="menu-item" onClick={() => deleteMessage(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', padding: '14px 16px', fontSize: '15px', fontWeight: 700, borderRadius: '16px', cursor: 'pointer', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
+                                    <Trash2 size={20} color="#ef4444" /> Delete for everyone
+                                </div>
+                            )}
+                            <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }} />
+                            <div className="menu-item cancel" onClick={() => setLongPressedMsg(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                Cancel
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                showBlockConfirm && createPortal(
+                    <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }} onClick={() => setShowBlockConfirm(false)}>
+                        <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', backgroundColor: 'var(--surface-color)' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Ban size={28} strokeWidth={2.5} />
+                            </div>
+                            <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Block {receiver?.name || username}?</h3>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
+                                Blocked contacts will no longer be able to call you or send you messages. They won't be notified.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={confirmBlock}>
+                                    Block User
+                                </button>
+                                <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowBlockConfirm(false)}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                showClearConfirm && createPortal(
+                    <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }} onClick={() => setShowClearConfirm(false)}>
+                        <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', backgroundColor: 'var(--surface-color)' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Trash2 size={28} strokeWidth={2.5} />
+                            </div>
+                            <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Clear Chat?</h3>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
+                                This will permanently delete all messages in this conversation. This action cannot be undone.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: '#f59e0b', color: 'white' }} onClick={executeClearChat}>
+                                    Clear History
+                                </button>
+                                <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowClearConfirm(false)}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+            }
+
+            {
+                previewMedia && (
+                    <div className="media-preview-overlay" onClick={() => setPreviewMedia(null)}>
+                        <div className="media-preview-topbar" onClick={(e) => e.stopPropagation()}>
+                            <button className="media-preview-close" onClick={() => setPreviewMedia(null)}>
+                                <X size={24} color="white" />
+                            </button>
+                            <button
+                                className="media-preview-download"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(previewMedia.url, `masum-media-${Date.now()}.${previewMedia.type === 'video' ? 'mp4' : 'jpg'}`);
+                                }}
+                            >
+                                ? Download
+                            </button>
+                        </div>
+                        <div className="media-preview-container">
+                            {previewMedia.type === 'video' ? (
+                                <VideoPreviewPlayer src={previewMedia.url} />
+                            ) : (
+                                <TransformWrapper
+                                    initialScale={1}
+                                    minScale={0.5}
+                                    maxScale={4}
+                                    centerOnInit
+                                >
+                                    <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                                        <img
+                                            src={previewMedia.url}
+                                            alt="Preview"
+                                            className="media-preview-img-zoomable"
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                        />
+                                    </TransformComponent>
+                                </TransformWrapper>
+                            )}
+                        </div>
+                    </div>
+                )
+            }
+
+            <FloatingActionSheet
+                isOpen={showMediaSheet}
+                onClose={() => setShowMediaSheet(false)}
+            >
+                <div className="action-sheet-grid">
+                    <div className="action-sheet-item" onClick={() => {
+                        setShowMediaSheet(false);
+                        handleGalleryClick();
+                    }}>
+                        <div className="icon-circle bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                            <ImagePlay size={24} />
+                        </div>
+                        <span>Gallery</span>
+                    </div>
+                    <div className="action-sheet-item" onClick={() => {
+                        setShowMediaSheet(false);
+                        navigate('/camera');
+                    }}>
+                        <div className="icon-circle bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400">
+                            <Camera size={24} />
+                        </div>
+                        <span>Camera</span>
+                    </div>
+                    <div className="action-sheet-item" onClick={() => {
+                        setShowMediaSheet(false);
+                        showToast('Document sharing coming soon', 'info');
+                    }}>
+                        <div className="icon-circle bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                            <FileText size={24} />
+                        </div>
+                        <span>Document</span>
+                    </div>
+                    <div className="action-sheet-item" onClick={() => {
+                        setShowMediaSheet(false);
+                        showToast('Contact sharing coming soon', 'info');
+                    }}>
+                        <div className="icon-circle bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                            <User size={24} />
+                        </div>
+                        <span>Contact</span>
+                    </div>
                 </div>
-            )}
-        </div>
+
+                <style>{`
+                    .action-sheet-grid {
+                        display: grid;
+                        grid-template-columns: repeat(4, 1fr);
+                        gap: 16px 8px;
+                        padding: 10px 0;
+                    }
+                    .action-sheet-item {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 8px;
+                        cursor: pointer;
+                        transition: transform 0.2s;
+                    }
+                    .action-sheet-item:active {
+                        transform: scale(0.95);
+                    }
+                    .action-sheet-item span {
+                        font-size: 13px;
+                        color: var(--text-secondary);
+                        font-weight: 500;
+                    }
+                    .icon-circle {
+                        width: 54px;
+                        height: 54px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                    }
+                `}</style>
+            </FloatingActionSheet>
+        </div >
     );
 };
 

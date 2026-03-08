@@ -1,6 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { insforge } from '../lib/insforge';
-import { useCurrentUserId } from '../hooks/useCurrentUser';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useData } from './DataContext';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -38,7 +37,7 @@ export const accentColors = [
 ];
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-    const userId = useCurrentUserId();
+    const { settings, loading: dataLoading } = useData();
     const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
         (sessionStorage.getItem('themeMode') as ThemeMode) || 'system'
     );
@@ -51,49 +50,16 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [chatWallpaper, setChatWallpaper] = useState<string | null>(() =>
         sessionStorage.getItem('chatWallpaper') || null
     );
-    const [loadingSettings, setLoadingSettings] = useState(true);
 
-    // Fetch settings from DB on mount/user load
+    // Sync from DataContext settings
     useEffect(() => {
-        if (!userId) {
-            setLoadingSettings(false);
-            return;
+        if (settings) {
+            if (settings.theme_mode) setThemeMode(settings.theme_mode as any);
+            if (settings.accent_color) setAccentColor(settings.accent_color);
+            if (settings.font_size) setFontSize(settings.font_size as any);
+            if (settings.chat_wallpaper !== undefined) setChatWallpaper(settings.chat_wallpaper);
         }
-
-        const fetchRemoteSettings = async () => {
-            try {
-                const { data: remoteData, error } = await insforge.database
-                    .from('user_settings')
-                    .select('*')
-                    .eq('user_id', userId);
-
-                const data = remoteData?.[0];
-
-                if (data) {
-                    if (data.theme_mode) setThemeMode(data.theme_mode);
-                    if (data.accent_color) setAccentColor(data.accent_color);
-                    if (data.font_size) setFontSize(data.font_size as any);
-                    if (data.chat_wallpaper !== undefined) setChatWallpaper(data.chat_wallpaper);
-                } else if (error) {
-                    // If doesn't exist, create it
-                    await insforge.database
-                        .from('user_settings')
-                        .upsert({
-                            user_id: userId,
-                            theme_mode: themeMode,
-                            accent_color: accentColor,
-                            font_size: fontSize
-                        });
-                }
-            } catch (err) {
-                console.error("Error syncing theme from DB:", err);
-            } finally {
-                setLoadingSettings(false);
-            }
-        };
-
-        fetchRemoteSettings();
-    }, [userId]);
+    }, [settings]);
 
     const handleSetThemeMode = (mode: ThemeMode) => {
         setThemeMode(mode);
@@ -113,14 +79,15 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         applyTheme();
     }, [themeMode, accentColor, fontSize, chatWallpaper]);
 
-    const applyTheme = () => {
+    const applyTheme = useCallback(() => {
         const root = document.documentElement;
 
-        // Apply Accent Color
+        // Apply Accent Color & Variations
         root.style.setProperty('--primary-color', accentColor);
-        // Create variations of the primary color
-        root.style.setProperty('--primary-dark', accentColor + 'ee');
-        root.style.setProperty('--primary-light', accentColor + '33');
+        // Create variations of the primary color using opacity for better harmony
+        root.style.setProperty('--primary-glow', `${accentColor}4d`); // 30% opacity
+        root.style.setProperty('--primary-light', `${accentColor}26`); // 15% opacity
+        root.style.setProperty('--primary-dark', `${accentColor}cc`); // 80% opacity
 
         // Apply Font Size
         const fontSizes = {
@@ -130,45 +97,29 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         };
         root.style.setProperty('--base-font-size', fontSizes[fontSize]);
 
-        // Theme Mode Logic
+        // Theme Mode Logic - Delegate to CSS classes
         const isDark = themeMode === 'dark' || (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
         if (isDark) {
-            root.classList.add('dark-theme');
-            root.style.setProperty('--surface-color', '#111b21');
-            root.style.setProperty('--secondary-color', '#202c33');
-            root.style.setProperty('--text-primary', '#e9edef');
-            root.style.setProperty('--text-secondary', '#8696a0');
-            root.style.setProperty('--border-color', '#222d34');
-            root.style.setProperty('--input-bg', '#2a3942');
-            root.style.setProperty('--message-sent', '#005c4b');
-            root.style.setProperty('--message-received', '#202c33');
-            root.style.setProperty('--chat-bg-default', '#0b141a');
-            root.style.setProperty('--chat-doodle-opacity', '0.05');
+            root.setAttribute('data-theme', 'dark');
+            root.classList.add('dark-theme'); // for legacy support if needed
         } else {
+            root.setAttribute('data-theme', 'light');
             root.classList.remove('dark-theme');
-            root.style.setProperty('--surface-color', '#ffffff');
-            root.style.setProperty('--secondary-color', '#f0f2f5');
-            root.style.setProperty('--text-primary', '#111b21');
-            root.style.setProperty('--text-secondary', '#667781');
-            root.style.setProperty('--border-color', '#e9edef');
-            root.style.setProperty('--input-bg', '#ffffff');
-            root.style.setProperty('--message-sent', '#dcf8c6');
-            root.style.setProperty('--message-received', '#ffffff');
-            root.style.setProperty('--chat-bg-default', '#efeae2');
-            root.style.setProperty('--chat-doodle-opacity', '0.4');
         }
-    };
+    }, [themeMode, accentColor, fontSize]);
 
-    // Listen for system theme changes
+    // Listen for system theme changes — applyTheme in dep array ensures no stale closure
     useEffect(() => {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
         const handleChange = () => {
             if (themeMode === 'system') applyTheme();
         };
+        // Also apply immediately when themeMode changes to 'system' so it picks up current OS state
+        if (themeMode === 'system') applyTheme();
         mediaQuery.addEventListener('change', handleChange);
         return () => mediaQuery.removeEventListener('change', handleChange);
-    }, [themeMode]);
+    }, [themeMode, applyTheme]);
 
     return (
         <ThemeContext.Provider value={{
@@ -180,7 +131,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
             setAccentColor,
             setFontSize,
             setChatWallpaper,
-            loadingSettings
+            loadingSettings: dataLoading
         }}>
             {children}
         </ThemeContext.Provider>
