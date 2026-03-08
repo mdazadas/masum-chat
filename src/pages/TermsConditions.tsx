@@ -82,7 +82,7 @@ const TermsConditions = () => {
                             </p>
                         </section>
 
-                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+                        <div style={{ height: '1px', background: 'var(--border-color)', margin: '8px 0', opacity: 0.5 }} />
 
                         <section className="terms-section" style={{ marginBottom: '0' }}>
                             <div className="terms-header-row">
@@ -96,7 +96,7 @@ const TermsConditions = () => {
                             </p>
                         </section>
 
-                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+                        <div style={{ height: '1px', background: 'var(--border-color)', margin: '8px 0', opacity: 0.5 }} />
 
                         <section className="terms-section" style={{ marginBottom: '0' }}>
                             <div className="terms-header-row">
@@ -110,7 +110,7 @@ const TermsConditions = () => {
                             </p>
                         </section>
 
-                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', margin: '8px 0' }} />
+                        <div style={{ height: '1px', background: 'var(--border-color)', margin: '8px 0', opacity: 0.5 }} />
 
                         <section className="terms-section" style={{ marginBottom: '0' }}>
                             <div className="terms-header-row">
@@ -144,10 +144,18 @@ const TermsConditions = () => {
                             If you have any questions regarding our legal framework or community guidelines, please reach out to our legal team.
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <button className="premium-btn-primary" style={{ width: '100%', gap: '10px', height: '52px' }}>
+                            <button
+                                className="premium-btn-primary"
+                                style={{ width: '100%', gap: '10px', height: '52px' }}
+                                onClick={() => window.location.href = 'mailto:web.mdazad@gmail.com'}
+                            >
                                 <Mail size={18} /> Contact Legal Team
                             </button>
-                            <button className="premium-btn-secondary" style={{ width: '100%', gap: '10px', height: '52px' }}>
+                            <button
+                                className="premium-btn-secondary"
+                                style={{ width: '100%', gap: '10px', height: '52px' }}
+                                onClick={() => window.open('https://mdazad.netlify.app', '_blank')}
+                            >
                                 <ExternalLink size={18} /> View Community Guidelines
                             </button>
                         </div>

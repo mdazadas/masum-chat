@@ -39,16 +39,24 @@ export const accentColors = [
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const { settings, loading: dataLoading } = useData();
     const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
-        (sessionStorage.getItem('themeMode') as ThemeMode) || 'system'
+        (sessionStorage.getItem('themeMode') as ThemeMode) ||
+        (settings?.theme_mode as ThemeMode) ||
+        'system'
     );
     const [accentColor, setAccentColor] = useState(() =>
-        sessionStorage.getItem('accentColor') || '#00a884'
+        sessionStorage.getItem('accentColor') ||
+        settings?.accent_color ||
+        '#00a884'
     );
     const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>(() =>
-        (sessionStorage.getItem('fontSize') as any) || 'medium'
+        (sessionStorage.getItem('fontSize') as any) ||
+        settings?.font_size ||
+        'medium'
     );
     const [chatWallpaper, setChatWallpaper] = useState<string | null>(() =>
-        sessionStorage.getItem('chatWallpaper') || null
+        sessionStorage.getItem('chatWallpaper') ||
+        settings?.chat_wallpaper ||
+        null
     );
 
     // Sync from DataContext settings
@@ -84,10 +92,15 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
         // Apply Accent Color & Variations
         root.style.setProperty('--primary-color', accentColor);
-        // Create variations of the primary color using opacity for better harmony
+
+        // Helper to adjust hex color brightness
+        const adjust = (color: string, amount: number) => {
+            return '#' + color.replace(/^#/, '').replace(/../g, color => ('0' + Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).slice(-2));
+        };
+
+        root.style.setProperty('--primary-dark', adjust(accentColor, -20));
         root.style.setProperty('--primary-glow', `${accentColor}4d`); // 30% opacity
         root.style.setProperty('--primary-light', `${accentColor}26`); // 15% opacity
-        root.style.setProperty('--primary-dark', `${accentColor}cc`); // 80% opacity
 
         // Apply Font Size
         const fontSizes = {
@@ -102,7 +115,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
         if (isDark) {
             root.setAttribute('data-theme', 'dark');
-            root.classList.add('dark-theme'); // for legacy support if needed
+            root.classList.add('dark-theme');
         } else {
             root.setAttribute('data-theme', 'light');
             root.classList.remove('dark-theme');
@@ -112,11 +125,29 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     // Listen for system theme changes — applyTheme in dep array ensures no stale closure
     useEffect(() => {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
         const handleChange = () => {
-            if (themeMode === 'system') applyTheme();
+            if (themeMode === 'system') {
+                applyTheme();
+                // User Request: Auto wallpaper switch when in system mode
+                if (mediaQuery.matches) {
+                    setChatWallpaper('#0b141a');
+                } else {
+                    setChatWallpaper(null);
+                }
+            }
         };
+
         // Also apply immediately when themeMode changes to 'system' so it picks up current OS state
-        if (themeMode === 'system') applyTheme();
+        if (themeMode === 'system') {
+            applyTheme();
+            if (mediaQuery.matches) {
+                setChatWallpaper('#0b141a');
+            } else {
+                setChatWallpaper(null);
+            }
+        }
+
         mediaQuery.addEventListener('change', handleChange);
         return () => mediaQuery.removeEventListener('change', handleChange);
     }, [themeMode, applyTheme]);

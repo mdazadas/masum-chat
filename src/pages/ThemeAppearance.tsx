@@ -49,7 +49,7 @@ const ThemeAppearance = () => {
                 await insforge.database
                     .from('user_settings')
                     .update(settingsToUpdate)
-                    .eq('id', record.id);
+                    .eq('user_id', userId);
             }
             return true;
         }, `Failed to update ${key.replace('_', ' ')}`);
@@ -71,7 +71,7 @@ const ThemeAppearance = () => {
         };
 
         const previousSettings = { ...settings };
-        setSettings((prev: any) => ({ ...prev, ...defaultData }));
+        setSettings?.((prev: any) => ({ ...prev, ...defaultData }));
 
         const result = await executeSecurely(async () => {
             const { data: record, error } = await insforge.database
@@ -86,7 +86,7 @@ const ThemeAppearance = () => {
                 const { error: updErr } = await insforge.database
                     .from('user_settings')
                     .update(defaultData)
-                    .eq('id', record.id);
+                    .eq('user_id', userId);
                 if (updErr) throw updErr;
             } else {
                 const { error: insErr } = await insforge.database
@@ -99,7 +99,7 @@ const ThemeAppearance = () => {
 
         if (result === undefined) {
             // Rollback on failure
-            setSettings(previousSettings);
+            setSettings?.(previousSettings);
         } else {
             showToast('Appearance reset to default', 'info');
         }
@@ -153,16 +153,17 @@ const ThemeAppearance = () => {
                 }
                 .preview-received {
                     align-self: flex-start;
-                    background: var(--message-received);
-                    color: var(--text-primary);
+                    background: var(--message-received-bg);
+                    color: var(--message-received-text);
                     border-bottom-left-radius: 4px;
+                    border: 1px solid var(--glass-border);
                 }
                 .preview-sent {
                     align-self: flex-end;
-                    background: var(--primary-color);
-                    color: white;
+                    background: var(--message-sent-bg);
+                    color: var(--message-sent-text);
                     border-bottom-right-radius: 4px;
-                    box-shadow: 0 4px 15px rgba(0, 168, 132, 0.25);
+                    box-shadow: 0 4px 15px var(--primary-glow);
                 }
                 .section-card {
                     margin-bottom: 24px;
@@ -231,12 +232,15 @@ const ThemeAppearance = () => {
                     transition: all 0.3s ease;
                     border-radius: 14px;
                     letter-spacing: 0.5px;
+                    opacity: 0.7;
                 }
+                .font-btn:hover { opacity: 1; color: var(--text-primary); }
                 .font-btn.active {
                     background: var(--surface-color);
                     color: var(--primary-color);
                     box-shadow: 0 4px 15px rgba(0,0,0,0.1);
                     transform: scale(1.02);
+                    opacity: 1;
                 }
                 .theme-card-icon-container {
                     width: 40px;
@@ -352,7 +356,7 @@ const ThemeAppearance = () => {
                         {/* Font Size */}
                         <SectionLabel icon={<Type size={18} />} title="Font Size" />
                         <div className="profile-glass-card section-card" style={{ padding: '8px' }}>
-                            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.03)', borderRadius: '18px', padding: '6px' }}>
+                            <div style={{ display: 'flex', background: 'var(--secondary-color)', border: '1px solid var(--glass-border)', borderRadius: '18px', padding: '6px' }}>
                                 {(['small', 'medium', 'large'] as const).map(size => (
                                     <button
                                         key={size}
@@ -388,18 +392,20 @@ const ThemeAppearance = () => {
                                             <div style={{
                                                 position: 'absolute',
                                                 inset: 0,
-                                                background: isSelected ? 'rgba(0, 168, 132, 0.1)' : 'rgba(0,0,0,0.05)',
+                                                background: isSelected ? 'rgba(0, 168, 132, 0.15)' : 'rgba(0,0,0,0.15)',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                backdropFilter: isSelected ? 'none' : 'blur(1px)'
+                                                backdropFilter: isSelected ? 'none' : 'blur(0.5px)'
                                             }}>
                                                 <span style={{
                                                     fontSize: '11px',
-                                                    fontWeight: 800,
-                                                    color: wp.id === 'dark' ? 'white' : 'var(--text-primary)',
+                                                    fontWeight: 900,
+                                                    color: 'white',
                                                     textAlign: 'center',
-                                                    textShadow: wp.id === 'dark' ? 'none' : '0 1px 2px rgba(255,255,255,0.8)'
+                                                    textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                                                    letterSpacing: '0.3px',
+                                                    textTransform: 'uppercase'
                                                 }}>
                                                     {wp.label}
                                                 </span>
@@ -481,9 +487,10 @@ const ThemeToggleCard = ({ active, onClick, icon, label }: { active: boolean, on
         </div>
         <div style={{
             fontSize: '13px',
-            fontWeight: 800,
+            fontWeight: 900,
             color: active ? 'var(--primary-color)' : 'var(--text-primary)',
-            letterSpacing: '0.5px'
+            letterSpacing: '0.6px',
+            opacity: active ? 1 : 0.85
         }}>
             {label}
         </div>

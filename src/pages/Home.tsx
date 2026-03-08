@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2 } from 'lucide-react';
+import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2, Check, CheckCheck } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
@@ -88,7 +88,7 @@ const Home = () => {
         const newPinned = !selectedChat.pinned;
 
         // Optimistic UI Update
-        setContacts(prev => prev.map(c =>
+        setContacts((prev: any[]) => prev.map((c: any) =>
             c.id === selectedChat.id ? { ...c, pinned: newPinned } : c
         ));
         closeActionSheet();
@@ -103,7 +103,7 @@ const Home = () => {
         } catch (err) {
             console.error('Pin error:', err);
             // Revert on failure
-            setContacts(prev => prev.map(c =>
+            setContacts((prev: any[]) => prev.map((c: any) =>
                 c.id === selectedChat.id ? { ...c, pinned: !newPinned } : c
             ));
         }
@@ -114,7 +114,7 @@ const Home = () => {
         const newMuted = !selectedChat.muted;
 
         // Optimistic UI Update
-        setContacts(prev => prev.map(c =>
+        setContacts((prev: any[]) => prev.map((c: any) =>
             c.id === selectedChat.id ? { ...c, muted: newMuted } : c
         ));
         closeActionSheet();
@@ -129,7 +129,7 @@ const Home = () => {
         } catch (err) {
             console.error('Mute error:', err);
             // Revert on failure
-            setContacts(prev => prev.map(c =>
+            setContacts((prev: any[]) => prev.map((c: any) =>
                 c.id === selectedChat.id ? { ...c, muted: !newMuted } : c
             ));
         }
@@ -306,13 +306,30 @@ const Home = () => {
                                         </div>
                                     </div>
                                     <div className="chat-row">
-                                        <div className="chat-preview">
+                                        <div className="chat-preview" style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
                                             {isTyping ? (
                                                 <span style={{ color: 'var(--primary-color)', fontWeight: 600, animation: 'pulse 1.5s infinite' }}>Typing...</span>
                                             ) : (
                                                 <>
+                                                    {chat.isLastMsgMe && (
+                                                        <span className="home-status-ticks" style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                                                            {chat.lastMsgStatus === 'read' ? (
+                                                                <CheckCheck size={14} className="tick-blue" />
+                                                            ) : chat.lastMsgStatus === 'delivered' ? (
+                                                                <CheckCheck size={14} className="tick-delivered" />
+                                                            ) : (
+                                                                <Check size={14} className="tick-sent" />
+                                                            )}
+                                                        </span>
+                                                    )}
                                                     {getIcon(chat.preview || '')}
-                                                    <span style={{ color: chat.unread > 0 ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: chat.unread > 0 ? 600 : 400 }}>
+                                                    <span style={{
+                                                        color: chat.unread > 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                                        fontWeight: chat.unread > 0 ? 600 : 400,
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis'
+                                                    }}>
                                                         {chat.preview}
                                                     </span>
                                                 </>

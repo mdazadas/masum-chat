@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Eye, User, Info, MessageSquare, ShieldCheck, Clock, Ban, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Eye, User, Info, MessageSquare, Shield, Clock, Ban, Check, Loader2 } from 'lucide-react';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
 import { useData } from '../context/DataContext';
@@ -214,6 +214,17 @@ const PrivacyStatus = () => {
                     background: rgba(0,0,0,0.05);
                     margin: 0 20px;
                 }
+                .premium-switch {
+                    width: 48px;
+                    height: 26px;
+                    background: #cbd5e1;
+                    border-radius: 20px;
+                    position: relative;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    border: none;
+                    flex-shrink: 0;
+                }
                 .premium-switch.active {
                     background: var(--primary-color);
                     box-shadow: 0 4px 12px rgba(0, 168, 132, 0.3);
@@ -234,14 +245,14 @@ const PrivacyStatus = () => {
                 }
                 .encryption-banner {
                     margin: 20px;
-                    background: rgba(255, 255, 255, 0.5);
+                    background: var(--glass-bg);
                     backdrop-filter: blur(10px);
                     padding: 16px;
                     border-radius: 16px;
                     display: flex;
                     gap: 16px;
                     align-items: flex-start;
-                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    border: 1px solid var(--glass-border);
                 }
                 .encryption-banner p {
                     font-size: 13px;
@@ -407,7 +418,7 @@ const PrivacyStatus = () => {
                     </div>
 
                     <div className="encryption-banner">
-                        <ShieldCheck size={24} color="var(--primary-color)" />
+                        <Shield size={24} color="var(--primary-color)" />
                         <p>
                             Your privacy is our priority. Masum Chat uses end-to-end encryption. Only you and the people you talk to can read or listen to them.
                         </p>

@@ -12,7 +12,7 @@ const UserProfile = () => {
     const navigate = useNavigate();
     const currentUserId = useCurrentUserId();
     const { showToast } = useToast();
-    const { profileData, refreshProfile, userPresence, contacts, setContacts } = useData();
+    const { profileData, refreshProfile, userPresence, contacts, setContacts, clearLocalChat } = useData();
 
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -144,14 +144,28 @@ const UserProfile = () => {
         setIsClearing(true);
 
         try {
+            // Step 1: Delete messages sent by current user to profile
             const { error: err1 } = await insforge.database
                 .from('messages')
                 .delete()
-                .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${profile.id}),and(sender_id.eq.${profile.id},receiver_id.eq.${currentUserId})`);
+                .eq('sender_id', currentUserId)
+                .eq('receiver_id', profile.id);
 
             if (err1) throw err1;
 
-            showToast('Chat history cleared', 'info');
+            // Step 2: Delete messages sent by profile to current user
+            const { error: err2 } = await insforge.database
+                .from('messages')
+                .delete()
+                .eq('sender_id', profile.id)
+                .eq('receiver_id', currentUserId);
+
+            if (err2) throw err2;
+
+            // Step 3: Clear local cache instantly (removes optimistic/unsent messages too)
+            if (profile.username) clearLocalChat(profile.username);
+
+            showToast('Chat history cleared permanently', 'info');
             navigate('/home');
         } catch (err: any) {
             console.error('Clear chat error:', err);
@@ -496,7 +510,7 @@ const UserProfile = () => {
             {showClearConfirm && (
                 <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowClearConfirm(false)}>
                     <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Trash2 size={28} strokeWidth={2.5} />
                         </div>
                         <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Clear Chat?</h3>
@@ -504,7 +518,7 @@ const UserProfile = () => {
                             This will permanently delete all messages in this conversation. This action cannot be undone.
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: '#f59e0b', color: 'white' }} onClick={handleClearChat} disabled={isClearing}>
+                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={handleClearChat} disabled={isClearing}>
                                 {isClearing ? 'Clearing...' : 'Clear History'}
                             </button>
                             <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowClearConfirm(false)}>

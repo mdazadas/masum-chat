@@ -28,7 +28,13 @@ interface DataContextType {
     setActiveChatId: (id: string | null) => void;
     incomingCall: any;
     setIncomingCall: React.Dispatch<React.SetStateAction<any>>;
+    playSound: (type: 'send' | 'receive') => void;
+    clearLocalChat: (username: string) => void;
 }
+
+// iPhone-style sound URLs (Premium High-Quality)
+const SEND_SOUND_URL = 'https://raw.githubusercontent.com/Anonymouse-Master/iPhone-Sounds/main/Sent.mp3';
+const RECEIVE_SOUND_URL = 'https://raw.githubusercontent.com/Anonymouse-Master/iPhone-Sounds/main/Note.mp3';
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
@@ -137,6 +143,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('masum_messages_cache', JSON.stringify(trimmed));
     }, [messagesCache]);
 
+    const playSound = useCallback((type: 'send' | 'receive') => {
+        try {
+            const url = type === 'send' ? SEND_SOUND_URL : RECEIVE_SOUND_URL;
+            const audio = new Audio(url);
+            audio.volume = 0.45; // Slightly lower for a premium feel
+
+            // Handle browser autoplay policies and rapid firing
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    // Silently fail if interaction hasn't happened yet
+                    console.log(`Audio play prevented (${type}):`, error.message);
+                });
+            }
+        } catch (e) {
+            console.warn('Audio system error:', e);
+        }
+    }, []);
+
+    // Cleanup local cache and contact preview for a user
+    const clearLocalChat = useCallback((userToClear: string) => {
+        setMessagesCache(prev => {
+            const newCache = { ...prev };
+            delete newCache[userToClear];
+            return newCache;
+        });
+
+        // Also clear the preview on the Home page
+        setContacts(prev => prev.map(c =>
+            c.username === userToClear
+                ? { ...c, preview: '', lastMsgStatus: undefined, unread: 0 }
+                : c
+        ));
+    }, []);
+
     const executeSecurely = async <T,>(operation: () => Promise<T>, errorMsg = 'An error occurred'): Promise<T | undefined> => {
         try {
             return await operation();
@@ -220,7 +261,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         else if (lastMsg.image_url) preview = '📷 Photo';
                         else if (lastMsg.video_url) preview = '📹 Video';
                         else if (lastMsg.audio_url) preview = '🎤 Voice message';
-                        else { preview = lastMsg.text || ''; if (preview.length > 45) preview = preview.substring(0, 45) + '...'; }
+                        else {
+                            preview = lastMsg.text || '';
+                            if (preview.length > 45) preview = preview.substring(0, 45) + '...';
+                        }
                     }
                     return {
                         ...c,
@@ -233,6 +277,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         unread: unreadMap[c.contact_id] || 0,
                         lastMessageAt: lastMsg?.created_at || c.created_at,
                         lastSeen: profile?.last_seen,
+                        lastMsgStatus: lastMsg ? (lastMsg.is_seen ? 'read' : lastMsg.is_delivered ? 'delivered' : 'sent') : null,
+                        isLastMsgMe: lastMsg?.sender_id?.toString() === userId?.toString(),
                     };
                 });
                 const sorted = mapped.sort((a: any, b: any) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
@@ -257,6 +303,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ──────────────────────────────────────────────────
     useEffect(() => {
         if (!userId || !initialized) return;
+
 
         const handleNewMessage = (payload: any) => {
             if (payload.sender_id !== userId && payload.receiver_id !== userId) return;
@@ -370,6 +417,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
 
+            if (isIncoming && payload.sender_id !== userId) {
+                playSound('receive');
+            }
+
             // Update Cache
             const incoming: any = {
                 id: payload.id,
@@ -407,7 +458,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     preview,
                     time: formatTime(payload.created_at || new Date().toISOString()),
                     lastMessageAt: payload.created_at || new Date().toISOString(),
-                    unread: (isIncoming && !isChatActive) ? (prev[idx].unread || 0) + 1 : prev[idx].unread
+                    unread: (isIncoming && !isChatActive) ? (prev[idx].unread || 0) + 1 : prev[idx].unread,
+                    lastMsgStatus: payload.is_seen ? 'read' : payload.is_delivered ? 'delivered' : 'sent',
+                    isLastMsgMe: payload.sender_id?.toString() === userId?.toString()
                 };
                 const rest = prev.filter((_, i) => i !== idx);
                 return [updated, ...rest].sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
@@ -441,16 +494,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setContacts(prev => prev.map(c => c.contact_id === contactId ? { ...c, unread: 0 } : c));
             }
 
-            // Handle last message deleted preview
-            if (payload.is_deleted) {
-                setContacts(prev => prev.map(c => {
-                    if (c.contact_id === contactId) {
-                        // Simple check if this was the last previewed message
-                        return { ...c, preview: 'This message was deleted' };
-                    }
-                    return c;
-                }));
-            }
+            // Sync message status updates to contact list for ticks
+            setContacts(prev => prev.map(c => {
+                if (c.contact_id === contactId) {
+                    // Update status if provided in payload, otherwise preserve existing
+                    const newStatus = payload.is_seen ? 'read' : (payload.is_delivered ? 'delivered' : c.lastMsgStatus);
+
+                    return {
+                        ...c,
+                        lastMsgStatus: newStatus,
+                        preview: payload.is_deleted ? 'This message was deleted' : (payload.text || c.preview),
+                        // Ensure we keep track of who sent the last message for tick visibility
+                        isLastMsgMe: payload.sender_id ? (payload.sender_id.toString() === userId?.toString()) : c.isLastMsgMe
+                    };
+                }
+                return c;
+            }));
         };
 
         const handleDeleteMessage = (payload: any) => {
@@ -643,7 +702,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             messagesCache, cacheMessages, refreshContacts, refreshProfile, refreshSettings,
             loading, initialized, authRestored, userId, userPresence, setUserPresence,
             globalTyping, executeSecurely, isOnline, activeChatId, setActiveChatId,
-            incomingCall, setIncomingCall
+            incomingCall, setIncomingCall, playSound, clearLocalChat
         }}>
             {children}
             {incomingCall && (

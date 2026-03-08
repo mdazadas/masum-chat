@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, HelpCircle, Mail, ExternalLink, Shield, ChevronDown, Search, MessageSquare } from 'lucide-react';
-import BlurImage from '../components/BlurImage';
+
 
 const FAQItem = ({ question, answer }: { question: string, answer: string }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -245,16 +245,16 @@ const HelpCenter = () => {
                         <ExternalLink size={18} color="var(--text-secondary)" />
                     </div>
 
-                    <div className="contact-card">
+                    <div className="contact-card" onClick={() => window.location.href = 'mailto:web.mdazad@gmail.com'}>
                         <div style={{
                             width: '44px',
                             height: '44px',
                             borderRadius: '12px',
-                            backgroundColor: 'rgba(0,0,0,0.05)',
+                            backgroundColor: 'var(--primary-light)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: 'var(--text-primary)'
+                            color: 'var(--primary-color)'
                         }}>
                             <Shield size={22} />
                         </div>
@@ -262,23 +262,28 @@ const HelpCenter = () => {
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Privacy Assurance</div>
                             <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Your data is always encrypted & safe.</div>
                         </div>
+                        <ExternalLink size={18} color="var(--text-secondary)" />
                     </div>
                 </div>
 
                 {/* Developer Info */}
-                <div style={{
-                    margin: '20px',
-                    padding: '24px',
-                    borderRadius: '24px',
-                    background: 'linear-gradient(145deg, var(--primary-color) 0%, var(--primary-dark) 100%)',
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '20px',
-                    boxShadow: '0 12px 24px rgba(0, 168, 132, 0.3)',
-                    position: 'relative',
-                    overflow: 'hidden'
-                }}>
+                <div
+                    onClick={() => window.open('https://mdazad.netlify.app', '_blank')}
+                    style={{
+                        margin: '20px',
+                        padding: '24px',
+                        borderRadius: '24px',
+                        background: 'linear-gradient(145deg, var(--primary-color) 0%, var(--primary-dark) 100%)',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '20px',
+                        boxShadow: '0 12px 24px rgba(0, 168, 132, 0.3)',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        cursor: 'pointer'
+                    }}
+                >
                     <MessageSquare size={100} style={{ position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.1, transform: 'rotate(-15deg)' }} />
 
                     <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
@@ -287,10 +292,10 @@ const HelpCenter = () => {
                         <div style={{ fontSize: '14px', opacity: 0.9, marginTop: '4px', lineHeight: '1.3' }}>CEO & Lead Engineer at Masum Chats</div>
                     </div>
                     <div style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2.5px solid rgba(255,255,255,0.4)', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,0.3)', flexShrink: 0 }}>
-                        <BlurImage
+                        <img
                             src="/md_azad_final.png"
                             alt="MD Azad"
-                            style={{ width: '100%', height: '100%' }}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
                     </div>
                 </div>
@@ -314,9 +319,9 @@ const HelpCenter = () => {
                     align-items: center;
                     gap: 16px;
                     padding: 18px;
-                    background: rgba(255, 255, 255, 0.7);
+                    background: var(--glass-bg);
                     backdrop-filter: blur(10px);
-                    border: 1.5px solid var(--border-color);
+                    border: 1.5px solid var(--glass-border);
                     border-radius: 20px;
                     cursor: pointer;
                     transition: all 0.2s;
