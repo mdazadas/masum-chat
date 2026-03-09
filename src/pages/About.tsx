@@ -211,6 +211,18 @@ const About = () => {
                     </div>
                 </div>
             </div>
+            <style>{`
+                @keyframes float {
+                    0%, 100% { transform: translateY(0px); }
+                    50% { transform: translateY(-14px); }
+                }
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.3); }
+                }
+                .list-item-hover { transition: background 0.15s; }
+                .list-item-hover:hover { background: var(--secondary-color); }
+            `}</style>
         </div>
     );
 };

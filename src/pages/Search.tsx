@@ -44,7 +44,7 @@ const Search = () => {
             }
         };
 
-        const timeoutId = setTimeout(fetchUsers, 200); // Debounce
+        const timeoutId = setTimeout(fetchUsers, 400); // Debounce
         return () => clearTimeout(timeoutId);
     }, [query, currentUserId]);
 
@@ -53,7 +53,7 @@ const Search = () => {
     };
 
     return (
-        <div className="profile-container w-full h-[100dvh] bg-surface-color flex flex-col relative overflow-hidden text-text-primary mx-auto max-w-md">
+        <div className="profile-container">
             <style>{`
                 .search-header {
                     padding: 12px 16px;

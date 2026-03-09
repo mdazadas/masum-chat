@@ -49,7 +49,7 @@ const Login = () => {
 
         setTimeout(() => {
           navigate('/home', { replace: true });
-        }, 1000);
+        }, 300);
       }
     } catch (err: any) {
       console.error("Login error:", err);

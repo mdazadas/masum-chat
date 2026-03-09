@@ -22,6 +22,7 @@ import MediaView from './pages/MediaView';
 import CameraView from './pages/CameraView';
 import CallView from './pages/CallView';
 import ProtectedRoute from './components/ProtectedRoute';
+import PermissionManager from './components/PermissionManager';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { DataProvider } from './context/DataContext';
@@ -36,6 +37,7 @@ function App() {
         <ThemeProvider>
           <ToastProvider>
             <div className="app-wrapper">
+              <PermissionManager />
               <Routes>
                 <Route path="/" element={<Login />} />
                 <Route path="/create-account" element={<CreateAccount />} />

@@ -154,14 +154,14 @@ const Settings = () => {
                 .delete-btn-premium:active { opacity: 1; background: rgba(220, 53, 69, 0.05); }
 
                 .modal-premium {
-                    background: rgba(255, 255, 255, 0.9);
+                    background: var(--surface-color);
                     backdrop-filter: blur(20px);
-                    border: 1px solid rgba(255, 255, 255, 0.4);
+                    border: 1.5px solid var(--border-color);
                     border-radius: 28px;
                     padding: 32px 24px;
                     width: 90%;
                     max-width: 360px;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
                     text-align: center;
                     animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
                 }

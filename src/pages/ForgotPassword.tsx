@@ -11,6 +11,7 @@ const ForgotPassword = () => {
     const [otp, setOtp] = useState(['', '', '', '', '', '']); // 6-digit OTP
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [resendTimer, setResendTimer] = useState(0);
@@ -242,7 +243,7 @@ const ForgotPassword = () => {
                     <form onSubmit={handleResetPassword}>
                         <div className="form-group">
                             <input
-                                type="password"
+                                type={showPassword ? 'text' : 'password'}
                                 id="npass"
                                 className="input-field"
                                 placeholder=" "
@@ -254,6 +255,13 @@ const ForgotPassword = () => {
                                 spellCheck={false}
                             />
                             <label htmlFor="npass" className="input-label">New Password</label>
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowPassword(!showPassword)}
+                            >
+                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </button>
                         </div>
                         <div className="form-group">
                             <input
@@ -306,13 +314,14 @@ const ForgotPassword = () => {
             </div>
             <style>{`
                 .otp-input {
-                    background: rgba(255, 255, 255, 0.05);
+                    background: var(--secondary-color);
                     backdrop-filter: blur(10px);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border: 1px solid var(--border-color);
                     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                    color: var(--text-primary);
                 }
                 .otp-input:focus {
-                    background: rgba(255, 255, 255, 0.08);
+                    background: var(--surface-color);
                     border-color: var(--primary-color);
                     box-shadow: 0 0 0 4px var(--primary-light);
                     transform: translateY(-2px);
@@ -327,6 +336,10 @@ const ForgotPassword = () => {
                 @keyframes fadeInScale {
                     from { opacity: 0; transform: scale(0.95); }
                     to { opacity: 1; transform: scale(1); }
+                }
+                @keyframes float {
+                    0%, 100% { transform: translateY(0px); }
+                    50% { transform: translateY(-12px); }
                 }
             `}</style>
         </div>
