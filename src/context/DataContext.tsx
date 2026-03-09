@@ -33,10 +33,6 @@ interface DataContextType {
     clearLocalChat: (username: string) => void;
 }
 
-// iPhone-style sound URLs (Premium High-Quality)
-const SEND_SOUND_URL = 'https://raw.githubusercontent.com/Anonymouse-Master/iPhone-Sounds/main/Sent.mp3';
-const RECEIVE_SOUND_URL = 'https://raw.githubusercontent.com/Anonymouse-Master/iPhone-Sounds/main/Note.mp3';
-
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 // Helper: format last message time
@@ -148,20 +144,44 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const playSound = useCallback((type: 'send' | 'receive') => {
         try {
-            const url = type === 'send' ? SEND_SOUND_URL : RECEIVE_SOUND_URL;
-            const audio = new Audio(url);
-            audio.volume = 0.45; // Slightly lower for a premium feel
+            // Use Web Audio API — no external URLs, no CORS issues, always works
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
 
-            // Handle browser autoplay policies and rapid firing
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    // Silently fail if interaction hasn't happened yet
-                    console.log(`Audio play prevented (${type}):`, error.message);
+            if (type === 'send') {
+                // Send: single short high-pitched pop (iPhone Sent)
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1050, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1300, ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.35, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.18);
+                osc.onended = () => ctx.close();
+            } else {
+                // Receive: two-tone descending chime (iPhone Received)
+                [0, 0.12].forEach((delay, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    const freq = i === 0 ? 980 : 820;
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.18);
+                    osc.start(ctx.currentTime + delay);
+                    osc.stop(ctx.currentTime + delay + 0.18);
+                    if (i === 1) osc.onended = () => ctx.close();
                 });
             }
         } catch (e) {
-            console.warn('Audio system error:', e);
+            // Silently ignore — audio is non-critical
         }
     }, []);
 
@@ -185,8 +205,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             return await operation();
         } catch (err: any) {
-            if (err.status === 401 || err.message?.includes('JWT')) {
-                window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
+            const isJwtError = err.status === 401 || err.code === 'PGRST301' || err.message?.includes('JWT') || err.message?.includes('expired');
+            if (isJwtError) {
+                // Try to silently refresh the session first
+                try {
+                    const { data: refreshData } = await insforge.auth.getCurrentSession();
+                    if (refreshData?.session) {
+                        // Session refreshed — retry the operation once
+                        try {
+                            return await operation();
+                        } catch (retryErr: any) {
+                            // Retry also failed — now sign out
+                            window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
+                            return undefined;
+                        }
+                    } else {
+                        window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
+                    }
+                } catch {
+                    window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
+                }
             } else {
                 window.dispatchEvent(new CustomEvent('masum-toast', { detail: { message: errorMsg, type: 'error' } }));
             }
