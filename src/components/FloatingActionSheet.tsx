@@ -58,7 +58,7 @@ const FloatingActionSheet: React.FC<FloatingActionSheetProps> = ({
                     background: rgba(0, 0, 0, 0);
                     backdrop-filter: blur(0px);
                     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    z-index: 50;
+                    z-index: 5000;
                     pointer-events: none;
                 }
                 .fas-overlay.open {
@@ -82,7 +82,7 @@ const FloatingActionSheet: React.FC<FloatingActionSheetProps> = ({
                     padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
                     transition: bottom 0.25s cubic-bezier(0.16, 1, 0.3, 1);
                     box-shadow: var(--glass-shadow);
-                    z-index: 51;
+                    z-index: 5001;
                     max-height: 90vh;
                     display: flex;
                     flex-direction: column;

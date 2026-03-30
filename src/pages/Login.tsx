@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LogIn, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useData } from '../context/DataContext';
 import { insforge } from '../lib/insforge';
 
 const Login = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { setUserId } = useData();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,13 +22,43 @@ const Login = () => {
   // Auto-redirect if already logged in (InsForge native)
   useEffect(() => {
     const checkSession = async () => {
-      const { data } = await insforge.auth.getCurrentSession();
-      if (data?.session) {
-        navigate('/home', { replace: true });
-      }
+      try {
+        // Silently check session only if key exists
+        const hasSession = sessionStorage.getItem('insforge_session') || localStorage.getItem('insforge_session');
+        if (!hasSession) return;
+
+        // Try-catch specifically for the SDK call to suppress 401 console logs where possible
+        const { data, error } = await insforge.auth.getCurrentSession().catch(() => ({ data: null, error: true }));
+        
+        if (error) {
+          // Silent cleanup only if error is definitive
+          localStorage.removeItem('insforge_session');
+          sessionStorage.removeItem('insforge_session');
+          return;
+        }
+
+        if (data?.session) {
+          navigate('/home', { replace: true });
+        }
+      } catch (err) { }
     };
     checkSession();
   }, [navigate]);
+
+  const handleOAuth = async (provider: 'google' | 'github') => {
+    try {
+      setLoading(true);
+      const { error } = await insforge.auth.signInWithOAuth({
+        provider,
+        redirectTo: window.location.origin + '/home'
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      showToast(`OAuth Error: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,15 +73,13 @@ const Login = () => {
 
       if (error) throw error;
 
-      if (data?.accessToken) {
+      if (data?.accessToken && data?.user) {
         showToast('Welcome back to Masum Chat!', 'success');
 
-        // Notify DataContext of auth change
-        window.dispatchEvent(new Event('masum-auth-change'));
-
-        setTimeout(() => {
-          navigate('/home', { replace: true });
-        }, 300);
+        // Immediately update local auth state
+        setUserId(data.user.id);
+        
+        navigate('/home', { replace: true });
       }
     } catch (err: any) {
       console.error("Login error:", err);
@@ -59,22 +89,21 @@ const Login = () => {
       setLoading(false);
     }
   };
-
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <div style={{
-            width: '64px', height: '64px', borderRadius: '16px',
-            backgroundColor: 'var(--primary-color)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 16px var(--primary-light)'
-          }}>
-            <MessageCircle size={36} color="white" fill="white" />
+    <div className="auth-container premium-mesh-bg">
+      <div className="auth-card fade-in" style={{ animationDelay: '0.1s' }}>
+        <div className="auth-brand-wrapper">
+          <div className="auth-brand-icon" style={{ position: 'relative' }}>
+            <div className="auth-brand-ring"></div>
+            <MessageCircle size={36} color="white" fill="white" style={{ position: 'relative', zIndex: 2 }} />
           </div>
+          <h1 className="auth-title">Masum Chat</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', background: 'var(--primary-light)', padding: '4px 10px', borderRadius: '12px' }}>
+            <div style={{ width: '6px', height: '6px', background: 'var(--primary-color)', borderRadius: '50%' }}></div>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--primary-dark)', letterSpacing: '0.5px' }}>SECURE LOGIN</span>
+          </div>
+          <p className="auth-subtitle">Welcome back! Please login to your account.</p>
         </div>
-        <h1 className="auth-title">Masum Chat</h1>
-        <p className="auth-subtitle">Welcome back! Please login to your account.</p>
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
@@ -120,40 +149,55 @@ const Login = () => {
             <Link to="/forgot-password" className="auth-link">Forgot Password?</Link>
           </div>
 
-          <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid}>
+          <button type="submit" className="btn btn-primary" style={{ height: '54px' }} disabled={loading || !isFormValid}>
             {loading ? (
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <span className="spinner-small" /> Logging in...
               </span>
             ) : (
-              <><LogIn size={20} /> Login</>
+              <><LogIn size={20} /> Login Now</>
             )}
           </button>
         </form>
 
+        <div style={{ margin: '24px 0 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>Or continue with</div>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+          <button 
+            type="button"
+            className="landing-btn-secondary" 
+            onClick={() => handleOAuth('google')}
+            disabled={loading}
+            style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
+          >
+              <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
+          </button>
+          <button 
+            type="button"
+            className="landing-btn-secondary" 
+            onClick={() => handleOAuth('github')}
+            disabled={loading}
+            style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
+          >
+              <img src="https://github.com/favicon.ico" alt="GitHub" style={{ width: '18px', height: '18px', filter: 'brightness(0)' }} />
+          </button>
+        </div>
+
         <p className="auth-footer">
           Don't have an account? <Link to="/create-account" className="auth-link">Sign Up</Link>
         </p>
+
+        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '11px' }}>
+          <Link to="/terms" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Terms</Link>
+          <Link to="/privacy-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Privacy</Link>
+          <Link to="/support" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Support</Link>
+        </div>
       </div>
-      <style>{`
-        .input-field.error {
-          border-color: #ef4444;
-          box-shadow: 0 0 0 1px #ef4444;
-        }
-        .input-field:focus {
-          background: var(--surface-color);
-          border-color: var(--primary-color);
-          box-shadow: 0 4px 12px var(--primary-light);
-        }
-        .auth-card {
-          animation: slideUpFade 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        @keyframes slideUpFade {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div >
+    </div>
   );
 };
 

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2, Check, CheckCheck } from 'lucide-react';
+import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2, Check, CheckCheck, Heart } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
@@ -15,7 +15,8 @@ const Home = () => {
     const {
         contacts, setContacts,
         profileData, initialized,
-        globalTyping, userPresence
+        globalTyping, userPresence,
+        settings
     } = useData();
 
 
@@ -44,7 +45,7 @@ const Home = () => {
             isLongPress.current = true;
             setSelectedChat(chat);
             setIsActionSheetOpen(true);
-            if (navigator.vibrate) navigator.vibrate(50);
+            if (settings?.vibration !== false && navigator.vibrate) navigator.vibrate(50);
         }, 600); // Optimized 600ms for more responsive feel
     };
 
@@ -196,6 +197,9 @@ const Home = () => {
                 <nav className="top-nav" style={{ padding: '12px 16px' }}>
                     <h1 className="app-title" style={{ margin: 0, fontSize: '22px', color: 'var(--primary-dark)' }}>Masum Chat</h1>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <button className="nav-icon-btn ripple" onClick={() => navigate('/support')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Heart size={22} color="#ef4444" />
+                        </button>
                         <button className="nav-icon-btn ripple" onClick={() => navigate('/search')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <SearchIcon size={24} />
                         </button>

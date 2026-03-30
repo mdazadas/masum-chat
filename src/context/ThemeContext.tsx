@@ -26,14 +26,14 @@ export const useTheme = () => {
 };
 
 export const accentColors = [
-    { name: 'Teal (Default)', value: '#00a884' },
-    { name: 'Blue', value: '#3b82f6' },
-    { name: 'Purple', value: '#8b5cf6' },
-    { name: 'Pink', value: '#ec4899' },
-    { name: 'Orange', value: '#f97316' },
-    { name: 'Gold', value: '#eab308' },
-    { name: 'Crimson', value: '#dc2626' },
-    { name: 'Slate', value: '#475569' }
+    { name: 'Teal (Default)', value: '#10b981' },
+    { name: 'Blue', value: '#60a5fa' },
+    { name: 'Purple', value: '#a78bfa' },
+    { name: 'Pink', value: '#f472b6' },
+    { name: 'Orange', value: '#fb923c' },
+    { name: 'Gold', value: '#fbbf24' },
+    { name: 'Crimson', value: '#f87171' },
+    { name: 'Slate', value: '#94a3b8' }
 ];
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
@@ -46,7 +46,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [accentColor, setAccentColor] = useState(() =>
         sessionStorage.getItem('accentColor') ||
         settings?.accent_color ||
-        '#00a884'
+        '#10b981'
     );
     const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>(() =>
         (sessionStorage.getItem('fontSize') as any) ||

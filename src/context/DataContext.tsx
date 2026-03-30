@@ -29,8 +29,9 @@ interface DataContextType {
     setActiveChatId: (id: string | null) => void;
     incomingCall: any;
     setIncomingCall: React.Dispatch<React.SetStateAction<any>>;
-    playSound: (type: 'send' | 'receive') => void;
+    playSound: (type: 'send' | 'receive' | 'tick') => void;
     clearLocalChat: (username: string) => void;
+    setUserId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -88,12 +89,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Restore Session
     const restoreSession = useCallback(async () => {
+        // Pre-flight: only attempt session restore if meaningful data exists in storage.
+        // NOTE: localStorage.setItem saves JSON.stringify(null) as the literal string "null",
+        // so we must check both that the key exists AND that it's not the string "null".
+        const profileInStorage = localStorage.getItem('masum_profile');
+        const settingsInStorage = localStorage.getItem('masum_settings');
+        const hasSessionFlag = 
+            (profileInStorage && profileInStorage !== 'null') ||
+            (settingsInStorage && settingsInStorage !== 'null') ||
+            !!localStorage.getItem('insforge_session') ||
+            !!sessionStorage.getItem('insforge_session') ||
+            Object.keys(localStorage).some(k => k.toLowerCase().includes('insforge'));
+        
+        if (!hasSessionFlag) {
+            setUserId(null);
+            setAuthRestored(true);
+            return;
+        }
+
+        setAuthRestored(false);
         try {
-            const { data, error } = await insforge.auth.getCurrentSession();
-            if (error) {
-                setUserId(null);
-            } else if (data?.session) {
+            const { data, error } = await insforge.auth.getCurrentSession().catch((err: any) => ({ data: null, error: err }));
+
+            if (data?.session) {
                 setUserId(data.session.user.id);
+            } else if (error) {
+                // Suppress "No refresh token/CSRF token" warnings as it's expected for guests/expired sessions
+                const isNoTokenErr = error?.message?.includes('refresh token') || 
+                                     error?.status === 401 || 
+                                     error?.status === 403 || 
+                                     error?.message?.includes('CSRF token');
+                                     
+                if (!isNoTokenErr) {
+                    console.warn("Session restore error:", error);
+                }
+                
+                // If the token is corrupt or refresh forbidden/unauthorized, forcefully clear it from storage to prevent infinite loops
+                if (error?.status === 403 || error?.status === 401 || error?.message?.includes('CSRF token') || error?.message?.includes('refresh token')) {
+                    Object.keys(localStorage).forEach(k => {
+                        if (k.toLowerCase().includes('insforge')) localStorage.removeItem(k);
+                    });
+                    Object.keys(sessionStorage).forEach(k => {
+                        if (k.toLowerCase().includes('insforge')) sessionStorage.removeItem(k);
+                    });
+                    insforge.auth.signOut().catch(() => {});
+                    window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
+                }
+                
+                setUserId(null);
             } else {
                 setUserId(null);
             }
@@ -108,7 +151,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Auth Listeners
     useEffect(() => {
-        const handleAuthChange = () => restoreSession();
+        const handleAuthChange = () => {
+            restoreSession();
+        };
         window.addEventListener('masum-auth-change', handleAuthChange);
         return () => window.removeEventListener('masum-auth-change', handleAuthChange);
     }, [restoreSession]);
@@ -142,44 +187,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('masum_messages_cache', JSON.stringify(trimmed));
     }, [messagesCache]);
 
-    const playSound = useCallback((type: 'send' | 'receive') => {
+    const playSound = useCallback((type: 'send' | 'receive' | 'tick') => {
+        // Respect user's in-app sound setting (defaults to true if undefined)
+        if (settingsRef.current && settingsRef.current.in_app_sound === false) return;
+
         try {
-            // Use Web Audio API — no external URLs, no CORS issues, always works
+            if (type === 'send' || type === 'receive') {
+                const audio = new Audio(`/sounds/${type}.mp3`);
+                audio.play().catch(() => { });
+                return;
+            }
+
+            // 'tick' sound: subtle, very short double high-pitched click (Synthesized)
             const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
             if (!AudioCtx) return;
             const ctx = new AudioCtx();
 
-            if (type === 'send') {
-                // Send: single short high-pitched pop (iPhone Sent)
+            [0, 0.08].forEach((delay, i) => {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.connect(gain);
                 gain.connect(ctx.destination);
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1050, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(1300, ctx.currentTime + 0.08);
-                gain.gain.setValueAtTime(0.35, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-                osc.start(ctx.currentTime);
-                osc.stop(ctx.currentTime + 0.18);
-                osc.onended = () => ctx.close();
-            } else {
-                // Receive: two-tone descending chime (iPhone Received)
-                [0, 0.12].forEach((delay, i) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.type = 'sine';
-                    const freq = i === 0 ? 980 : 820;
-                    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
-                    gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
-                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.18);
-                    osc.start(ctx.currentTime + delay);
-                    osc.stop(ctx.currentTime + delay + 0.18);
-                    if (i === 1) osc.onended = () => ctx.close();
-                });
-            }
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(2500 + (i * 500), ctx.currentTime + delay);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.04);
+                osc.start(ctx.currentTime + delay);
+                osc.stop(ctx.currentTime + delay + 0.04);
+                if (i === 1) osc.onended = () => ctx.close();
+            });
         } catch (e) {
             // Silently ignore — audio is non-critical
         }
@@ -235,9 +271,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const refreshProfile = async () => {
         if (!userId) return;
         return executeSecurely(async () => {
-            const { data } = await insforge.database.from('profiles').select().eq('id', userId).single();
-            if (data) setProfileData(data);
-            return data;
+            const { data } = await insforge.database.from('profiles').select().eq('id', userId).maybeSingle();
+            
+            if (data) {
+                setProfileData(data);
+                return data;
+            }
+
+            // Fallback: If profile missing, attempt to create it
+            const { data: sessionData } = await insforge.auth.getCurrentSession();
+            if (sessionData?.session?.user) {
+                const u = sessionData.session.user;
+                const defaultProfile = {
+                    id: u.id,
+                    username: u.email?.split('@')[0] || 'user_' + u.id.slice(0, 5),
+                    full_name: u.profile?.name || u.email?.split('@')[0] || 'Anonymous User',
+                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.id}`,
+                    status: 'Hey there! I am using Masum Chat.',
+                    last_seen: new Date().toISOString()
+                };
+                
+                const { data: created } = await insforge.database.from('profiles').insert([defaultProfile]).select().maybeSingle();
+                if (created) {
+                    setProfileData(created);
+                    return created;
+                }
+            }
+            return null;
         }, 'Failed to refresh profile');
     };
 
@@ -245,8 +305,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!userId) return;
         return executeSecurely(async () => {
             const { data } = await insforge.database.from('user_settings').select().eq('user_id', userId).maybeSingle();
-            if (data) setSettings(data);
-            return data;
+            
+            if (data) {
+                setSettings(data);
+                return data;
+            }
+
+            // Fallback: Create default settings if missing
+            const defaultSettings = {
+                user_id: userId,
+                privacy_mode: true,
+                stealth_notifications: true,
+                auto_delete_hours: 24,
+                in_app_sound: true,
+                last_updated: new Date().toISOString()
+            };
+
+            const { data: created } = await insforge.database.from('user_settings').insert([defaultSettings]).select().maybeSingle();
+            if (created) {
+                setSettings(created);
+                return created;
+            }
+            return null;
         }, 'Failed to refresh settings');
     };
 
@@ -270,11 +350,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (missingIds.length > 0) {
                     const inserts = missingIds.map(cid => ({ user_id: userId, contact_id: cid }));
                     try {
-                        await insforge.database.from('contacts').insert(inserts);
+                        // Use upsert to avoid 409 Conflict if contact was already added concurrently
+                        await insforge.database.from('contacts').upsert(inserts, { onConflict: 'user_id,contact_id' });
                         inserts.forEach(i => dbContacts.push({ ...i, created_at: new Date().toISOString() }));
-                    } catch (e) {
-                        console.error('Failed to auto-sync missing contacts:', e);
-                    }
+                    } catch { }
                 }
 
                 const finalContactIds = dbContacts.map((c: any) => c.contact_id);
@@ -356,21 +435,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (isChatActive && !payload.is_seen) {
                 (async () => {
                     try {
+                        const { data: sessionData } = await insforge.auth.getCurrentSession();
+                        const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
+                        if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
+                        
                         await insforge.database.from('messages').update({ is_seen: true }).eq('id', payload.id);
                     } catch (e) { console.error('Auto-mark seen error:', e); }
                 })();
             }
 
+            // ──────────────────────────────────────────────────
+            // Contact discovery for both incoming & outgoing
+            // ──────────────────────────────────────────────────
             const currentContacts = contactsRef.current;
             const contact = currentContacts.find(c => c.contact_id === contactId);
+
             if (!contact) {
-                // Discover entirely new contact on incoming message
+                // Discover entirely new contact (works for both incoming/outgoing)
                 (async () => {
                     try {
+                        const { data: sessionData } = await insforge.auth.getCurrentSession();
+                        const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
+                        if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
+                        
+                        console.log('Real-time Discovery: New contact found via message', contactId);
                         if (isIncoming && !payload.is_delivered) {
                             await insforge.database.from('messages').update({ is_delivered: true }).eq('id', payload.id);
                         }
-                        await insforge.database.from('contacts').insert([{ user_id: userId, contact_id: contactId }]);
+                        await insforge.database.from('contacts').upsert([{ user_id: userId, contact_id: contactId }], { onConflict: 'user_id,contact_id' });
                     } catch (e) {
                         console.error('Failed processing dynamic new contact:', e);
                     }
@@ -380,41 +472,68 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return;
             }
 
-            // Deduplication
+            console.log(`Real-time: ${isIncoming ? 'Incoming' : 'Outgoing'} message update for ${contact.username}`, payload.id);
+
+            // Deduplication & Optimistic Matching
             const existingCache = messagesCacheRef.current[contact.username] || [];
+
+            // 1. Exact ID duplicate check
             if (existingCache.some(m => m.id === payload.id)) return;
 
-            // Content-based deduplication for optimistic responses
-            // ONLY merge if the existing message has a temporary timestamp-based ID
-            const isMedia = payload.image_url || payload.video_url || payload.audio_url;
+            // 2. ClientId-based matching for optimistic responses (THE PRIMARY SYNC KEY)
+            const matchedIndex = existingCache.findIndex(m =>
+                m.clientId !== undefined &&
+                payload.clientId !== undefined &&
+                m.clientId === payload.clientId
+            );
 
+            if (matchedIndex !== -1 && payload.id) {
+                // We found a match! Update the optimistic bubble with real server data
+                setMessagesCache(prev => {
+                    const cache = [...(prev[contact.username] || [])];
+                    if (cache[matchedIndex]) {
+                        cache[matchedIndex] = {
+                            ...cache[matchedIndex],
+                            id: payload.id,
+                            clientId: payload.clientId, // Keep the mapping
+                            optimistic: false,
+                            uploading: false,
+                            uploadProgress: 100,
+                            image: payload.image_url || cache[matchedIndex].image,
+                            video: payload.video_url || cache[matchedIndex].video,
+                            audio: payload.audio_url || cache[matchedIndex].audio,
+                        };
+                    }
+                    return { ...prev, [contact.username]: cache };
+                });
+                return;
+            }
+
+            // 3. Fallback content-based matching (for missed clientIds or external triggers)
+            const isMedia = payload.image_url || payload.video_url || payload.audio_url;
             const recentDuplicateIndex = existingCache.findIndex(m => {
-                if (!(typeof m.id === 'number' && m.id > 1000000000000)) return false; // Must be optimistic timestamp
+                if (!(typeof m.id === 'number' && m.id > 1000000000000)) return false;
                 if (m.sender !== (payload.sender_id === userId ? 'me' : 'other')) return false;
 
-                // If it's a media message, match on the fact that both are media 
-                // (Optimistic media messages have local blob URLs, payload has remote URLs)
                 if (isMedia) {
                     return (payload.image_url && m.mediaType === 'image') ||
                         (payload.video_url && m.mediaType === 'video') ||
                         (payload.audio_url && m.mediaType === 'audio');
                 }
-
-                // Otherwise exact text match
                 return m.text === payload.text && Math.abs(new Date(m.created_at || Date.now()).getTime() - new Date().getTime()) < 5000;
             });
 
             if (recentDuplicateIndex !== -1 && payload.id) {
-                // If it's a match, just update the ID and URL, and mark as no longer optimistic
                 setMessagesCache(prev => {
                     const cache = [...(prev[contact.username] || [])];
                     if (cache[recentDuplicateIndex]) {
                         cache[recentDuplicateIndex] = {
                             ...cache[recentDuplicateIndex],
                             id: payload.id,
-                            optimistic: false, // No longer optimistic once we have a server ID
-                            uploading: false,   // CRITICAL FIX: Clear uploading state
-                            uploadProgress: 100, // CRITICAL FIX: Set progress to 100
+                            clientId: payload.clientId || cache[recentDuplicateIndex].clientId,
+                            optimistic: false,
+                            uploading: false,
+                            uploadProgress: 100,
                             image: payload.image_url || cache[recentDuplicateIndex].image,
                             video: payload.video_url || undefined,
                             audio: payload.audio_url || cache[recentDuplicateIndex].audio,
@@ -475,7 +594,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Update Cache
             const incoming: any = {
                 id: payload.id,
-                clientId: payload.id,
+                clientId: payload.clientId || payload.id,
                 text: payload.text || '',
                 time: new Date(payload.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
                 sender: payload.sender_id === userId ? 'me' : 'other',
@@ -543,6 +662,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (payload.is_seen && payload.receiver_id === userId) {
                 setContacts(prev => prev.map(c => c.contact_id === contactId ? { ...c, unread: 0 } : c));
+            }
+
+            // Play tick sound if OUR message was just delivered/read
+            if (payload.sender_id === userId && (payload.is_seen || payload.is_delivered)) {
+                // Ensure we only play it if the status actually changed (don't spam on repeated events)
+                const existingExistingMsgs = messagesCacheRef.current?.[contact.username] || [];
+                const existingMsg = existingExistingMsgs.find(m => m.id === payload.id);
+                if (existingMsg) {
+                    const oldStatus = existingMsg.status;
+                    const newStatus = payload.is_seen ? 'read' : (payload.is_delivered ? 'delivered' : oldStatus);
+                    if (oldStatus !== newStatus && (newStatus === 'delivered' || newStatus === 'read')) {
+                        playSound('tick');
+                    }
+                }
             }
 
             // Sync message status updates to contact list for ticks
@@ -617,6 +750,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
         };
 
+        const handleBlockStatusChange = (payload: any) => {
+            // Broadcast it to the rest of the app (Chat, UserProfile)
+            window.dispatchEvent(new CustomEvent('masum-block-status-change', { detail: payload.payload }));
+        };
+
         const setupRealtime = async () => {
             try {
                 await insforge.realtime.connect();
@@ -624,6 +762,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 insforge.realtime.on('UPDATE_message', handleUpdateMessage);
                 insforge.realtime.on('DELETE_message', handleDeleteMessage);
                 insforge.realtime.on('UPDATE_profile', handleUpdateProfile);
+                insforge.realtime.on('UPDATE_block_status', handleBlockStatusChange);
                 insforge.realtime.on('typing', handleTypingEvent);
                 insforge.realtime.on('status', handleStatusEvent);
                 insforge.realtime.on('CALL_INIT', handleCallInit);
@@ -648,6 +787,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             insforge.realtime.off('UPDATE_message', handleUpdateMessage);
             insforge.realtime.off('DELETE_message', handleDeleteMessage);
             insforge.realtime.off('UPDATE_profile', handleUpdateProfile);
+            insforge.realtime.off('UPDATE_block_status', handleBlockStatusChange);
             insforge.realtime.off('typing', handleTypingEvent);
             insforge.realtime.off('status', handleStatusEvent);
             insforge.realtime.off('CALL_INIT', handleCallInit);
@@ -705,8 +845,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
 
                 // Check if token is likely still valid (buffer of 15s)
-                if (sessionData.session.expiresAt && new Date(sessionData.session.expiresAt).getTime() < Date.now() + 15000) {
-                    return; // Near expiration, stop silently
+                // Supabase/InsForge uses `expires_at` (unix timestamp in seconds)
+                const expiresAt = (sessionData.session as any).expires_at || (sessionData.session as any).expiresAt;
+                if (expiresAt && (expiresAt * 1000) < Date.now() + 15000) {
+                    // Token is expired or about to expire. The SDK's autoRefreshToken should handle it,
+                    // but we skip this background update to prevent a 401 trace in the console.
+                    return; 
                 }
 
                 // Fire database update only if authenticated
@@ -753,7 +897,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             messagesCache, cacheMessages, refreshContacts, refreshProfile, refreshSettings,
             loading, initialized, authRestored, userId, userPresence, setUserPresence,
             globalTyping, executeSecurely, isOnline, activeChatId, setActiveChatId,
-            incomingCall, setIncomingCall, playSound, clearLocalChat
+            incomingCall, setIncomingCall, playSound, clearLocalChat, setUserId
         }}>
             {children}
             {incomingCall && (

@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { UserPlus, CheckCircle2, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useData } from '../context/DataContext';
 import { insforge } from '../lib/insforge';
 
 const CreateAccount = () => {
     const navigate = useNavigate();
     const { showToast } = useToast();
+    const { setUserId } = useData();
     const [authStep, setAuthStep] = useState(1); // 1: Details, 2: OTP Verify
     const [name, setName] = useState('');
     const [username, setUsername] = useState('');
@@ -166,6 +168,7 @@ const CreateAccount = () => {
                 setTimeout(() => otpRefs.current[0]?.focus(), 100);
             } else if (data?.accessToken) {
                 if (data?.user) {
+                    setUserId(data.user.id);
                     // Ensure profile is created/linked correctly using upsert for idempotency
                     await insforge.database.from('profiles').upsert([{
                         id: data.user.id,
@@ -176,12 +179,26 @@ const CreateAccount = () => {
                     }], { onConflict: 'id' });
                 }
                 showToast('Welcome to Masum Chat!', 'success');
-                window.dispatchEvent(new Event('masum-auth-change'));
                 navigate('/home', { replace: true });
             }
         } catch (error: any) {
             console.error("Sign up error:", error);
             showToast(error?.message || 'Sign up failed.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleOAuth = async (provider: 'google' | 'github') => {
+        try {
+            setLoading(true);
+            const { error } = await insforge.auth.signInWithOAuth({
+                provider,
+                redirectTo: window.location.origin + '/home'
+            });
+            if (error) throw error;
+        } catch (err: any) {
+            showToast(`OAuth Error: ${err.message}`, 'error');
         } finally {
             setLoading(false);
         }
@@ -204,6 +221,7 @@ const CreateAccount = () => {
             if (error) throw error;
 
             if (data?.user) {
+                setUserId(data.user.id);
                 // Ensure profile is created/linked correctly using upsert for idempotency
                 await insforge.database.from('profiles').upsert([{
                     id: data.user.id,
@@ -228,24 +246,26 @@ const CreateAccount = () => {
 
 
     return (
-        <div className="auth-container">
-            <div className="auth-card">
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-                    <div style={{
-                        width: '64px', height: '64px', borderRadius: '16px',
-                        backgroundColor: 'var(--primary-color)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 8px 16px var(--primary-light)'
-                    }}>
-                        <MessageCircle size={36} color="white" fill="white" />
+        <div className="auth-container premium-mesh-bg">
+            <div className="auth-card fade-in" style={{ animationDelay: '0.1s' }}>
+                <div className="auth-brand-wrapper">
+                    <div className="auth-brand-icon" style={{ position: 'relative' }}>
+                        <div className="auth-brand-ring"></div>
+                        <MessageCircle size={36} color="white" fill="white" style={{ position: 'relative', zIndex: 2 }} />
                     </div>
+                    <h1 className="auth-title">{authStep === 1 ? 'Create Account' : 'Verify Email'}</h1>
+                    {authStep === 1 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', background: 'var(--primary-light)', padding: '4px 10px', borderRadius: '12px' }}>
+                            <div style={{ width: '6px', height: '6px', background: 'var(--primary-color)', borderRadius: '50%' }}></div>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--primary-dark)', letterSpacing: '0.5px' }}>SECURE REGISTRATION</span>
+                        </div>
+                    )}
+                    <p className="auth-subtitle">
+                        {authStep === 1
+                            ? 'Join Masum Chat — fast, secure messaging.'
+                            : `Enter the 6-digit code sent to ${email}`}
+                    </p>
                 </div>
-                <h1 className="auth-title">{authStep === 1 ? 'Create Account' : 'Verify Email'}</h1>
-                <p className="auth-subtitle">
-                    {authStep === 1
-                        ? 'Join Masum Chat — fast, secure messaging.'
-                        : `Enter the 6-digit code sent to ${email}`}
-                </p>
 
                 {authStep === 1 && (
                     <form onSubmit={handleSignUp}>
@@ -258,6 +278,7 @@ const CreateAccount = () => {
                                 required
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
+                                autoComplete="name"
                             />
                             <label htmlFor="name" className="input-label">Full Name</label>
                         </div>
@@ -271,6 +292,7 @@ const CreateAccount = () => {
                                 required
                                 value={username}
                                 onChange={(e) => handleUsernameChange(e.target.value)}
+                                autoComplete="username"
                             />
                             <label htmlFor="username" className="input-label">Username</label>
                             {usernameStatus !== 'idle' && (
@@ -302,6 +324,7 @@ const CreateAccount = () => {
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
+                                autoComplete="email"
                                 inputMode="email"
                             />
                             <label htmlFor="email" className="input-label">Email Address</label>
@@ -316,6 +339,7 @@ const CreateAccount = () => {
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
+                                autoComplete="new-password"
                             />
                             <label htmlFor="password" className="input-label">Password</label>
                             <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)}>
@@ -332,6 +356,7 @@ const CreateAccount = () => {
                                 required
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
+                                autoComplete="new-password"
                             />
                             <label htmlFor="confirmPassword" className="input-label">Confirm Password</label>
                             <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
@@ -350,15 +375,42 @@ const CreateAccount = () => {
                             )}
                         </div>
 
-                        <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid}>
+                        <button type="submit" className="btn btn-primary" style={{ height: '54px' }} disabled={loading || !isFormValid}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                    <span className="spinner" /> Creating account...
+                                    <span className="spinner-small" /> Creating account...
                                 </span>
                             ) : (
-                                <><UserPlus size={20} /> Create Account</>
+                                <><UserPlus size={20} /> Create Account Now</>
                             )}
                         </button>
+
+                        <div style={{ margin: '20px 0 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>Or join with</div>
+                            <div style={{ flex: 1, height: '1px', background: 'var(--border-color)' }}></div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                            <button 
+                                type="button"
+                                className="landing-btn-secondary" 
+                                onClick={() => handleOAuth('google')}
+                                disabled={loading}
+                                style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
+                            >
+                                <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
+                            </button>
+                            <button 
+                                type="button"
+                                className="landing-btn-secondary" 
+                                onClick={() => handleOAuth('github')}
+                                disabled={loading}
+                                style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
+                            >
+                                <img src="https://github.com/favicon.ico" alt="GitHub" style={{ width: '18px', height: '18px', filter: 'brightness(0)' }} />
+                            </button>
+                        </div>
                     </form>
                 )}
 
@@ -416,36 +468,16 @@ const CreateAccount = () => {
                     </form>
                 )}
 
-                <p className="auth-footer">
-                    Already have an account? <Link to="/" className="auth-link">Login</Link>
+                <p className="auth-footer" style={{ marginTop: '16px' }}>
+                    Already have an account? <Link to="/login" className="auth-link">Login</Link>
                 </p>
+
+                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '11px' }}>
+                    <Link to="/terms" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Terms</Link>
+                    <Link to="/privacy-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Privacy</Link>
+                    <Link to="/support" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Support</Link>
+                </div>
             </div>
-            <style>{`
-                .otp-input {
-                    background: var(--secondary-color);
-                    backdrop-filter: blur(10px);
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                    color: var(--text-primary);
-                }
-                .otp-input:focus {
-                    background: var(--surface-color);
-                    border-color: var(--primary-color);
-                    box-shadow: 0 0 0 4px var(--primary-light);
-                    transform: translateY(-2px);
-                }
-                .input-field.error {
-                    border-color: #ef4444;
-                    box-shadow: 0 0 0 1px #ef4444;
-                }
-                .auth-card {
-                    animation: fadeInScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
-                }
-                @keyframes fadeInScale {
-                    from { opacity: 0; transform: scale(0.95); }
-                    to { opacity: 1; transform: scale(1); }
-                }
-            `}</style>
         </div>
     );
 };

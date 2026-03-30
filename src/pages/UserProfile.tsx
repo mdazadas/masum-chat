@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, MessageSquare, Ban, Trash2, Mail, Phone, Video, Info, ImageIcon, Calendar } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -6,18 +6,21 @@ import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
 import Avatar from '../components/Avatar';
 import { useData } from '../context/DataContext';
+import ClearChatModal from '../components/ClearChatModal';
+import BlockUserModal from '../components/BlockUserModal';
 
 const UserProfile = () => {
     const { username } = useParams();
     const navigate = useNavigate();
     const currentUserId = useCurrentUserId();
     const { showToast } = useToast();
-    const { profileData, refreshProfile, userPresence, contacts, setContacts, clearLocalChat } = useData();
+    const { profileData, refreshProfile, userPresence, contacts, clearLocalChat } = useData();
 
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState(false);
     const [isClearing, setIsClearing] = useState(false);
+    const [isBlocked, setIsBlocked] = useState(false);
 
     const isMe = username === 'me' || (profileData && username === profileData.username);
     const location = useLocation();
@@ -69,13 +72,27 @@ const UserProfile = () => {
                     if (data) setProfile(data);
                     if (error) throw error;
 
-                    // Fetch Media Count (messages with images or videos in this conversation)
+                    // Fetch Media Count & Block Status
                     if (data && currentUserId) {
-                        const { count } = await insforge.database
+                        const pid = data.id || data.contact_id;
+                        
+                        // Media Count
+                        insforge.database
                             .from('messages')
                             .select('*', { count: 'exact', head: true })
-                            .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${data.id},image_url.neq.null),and(sender_id.eq.${currentUserId},receiver_id.eq.${data.id},video_url.neq.null),and(sender_id.eq.${data.id},receiver_id.eq.${currentUserId},image_url.neq.null),and(sender_id.eq.${data.id},receiver_id.eq.${currentUserId},video_url.neq.null)`);
-                        setMediaCount(count || 0);
+                            .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${pid},image_url.neq.null),and(sender_id.eq.${currentUserId},receiver_id.eq.${pid},video_url.neq.null),and(sender_id.eq.${pid},receiver_id.eq.${currentUserId},image_url.neq.null),and(sender_id.eq.${pid},receiver_id.eq.${currentUserId},video_url.neq.null)`)
+                            .then(res => setMediaCount(res.count || 0));
+                            
+                        // Block Status
+                        insforge.database
+                            .from('blocked_users')
+                            .select('blocker_id,blocked_id')
+                            .or(`and(blocker_id.eq.${currentUserId},blocked_id.eq.${pid}),and(blocker_id.eq.${pid},blocked_id.eq.${currentUserId})`)
+                            .then(({ data: blockRows }) => {
+                                if (blockRows) {
+                                    setIsBlocked(blockRows.some((r: any) => r.blocker_id === currentUserId && r.blocked_id === pid));
+                                }
+                            });
                     }
                 }
             } catch (err) {
@@ -114,27 +131,58 @@ const UserProfile = () => {
 
     const handleBlockUser = async () => {
         if (!currentUserId || !profile) return;
-
-        // Optimistic update
-        const previousContacts = [...contacts];
-        setContacts(prev => prev.filter(c => c.contact_id !== profile.id));
         setShowBlockConfirm(false);
 
         try {
             const { error } = await insforge.database
                 .from('blocked_users')
-                .insert([{
+                .upsert([{
                     blocker_id: currentUserId,
-                    blocked_id: profile.id
-                }]);
+                    blocked_id: profile.contact_id || profile.id
+                }], { onConflict: 'blocker_id,blocked_id' });
 
             if (error) throw error;
-            showToast(`${profile.name || profile.username} blocked`, 'error');
-            navigate('/home');
+            setIsBlocked(true);
+
+            // Real-time broadcast to both users' channels to trigger instant UI updates
+            const targetId = profile.contact_id || profile.id;
+            const payload = { type: 'block', blocker_id: currentUserId, blocked_id: targetId };
+            insforge.realtime.publish(`user:${targetId}`, 'UPDATE_block_status', payload).catch(console.error);
+            insforge.realtime.publish(`user:${currentUserId}`, 'UPDATE_block_status', payload).catch(console.error);
+
+            showToast(`${profile.name || profile.username} blocked`, 'info');
+            // Navigate to the chat page — pass isBlocked locally to prevent flash
+            navigate(`/chat/${profile.username}`, { state: { profile, isBlockedInitially: true } });
         } catch (err: any) {
             console.error("Block user error:", err);
-            setContacts(previousContacts);
             showToast('Failed to block user', 'error');
+        }
+    };
+
+    const handleUnblockUser = async () => {
+        if (!currentUserId || !profile) return;
+        setIsBlocked(false); // Optimistic
+
+        try {
+            const { error } = await insforge.database
+                .from('blocked_users')
+                .delete()
+                .eq('blocker_id', currentUserId)
+                .eq('blocked_id', profile.contact_id || profile.id);
+
+            if (error) throw error;
+
+            // Real-time broadcast to both users' channels to trigger instant UI updates
+            const targetId = profile.contact_id || profile.id;
+            const payload = { type: 'unblock', blocker_id: currentUserId, blocked_id: targetId };
+            insforge.realtime.publish(`user:${targetId}`, 'UPDATE_block_status', payload).catch(console.error);
+            insforge.realtime.publish(`user:${currentUserId}`, 'UPDATE_block_status', payload).catch(console.error);
+
+            showToast(`${profile.name || profile.username} unblocked`, 'info');
+        } catch (err: any) {
+            console.error("Unblock user error:", err);
+            setIsBlocked(true); // Rollback
+            showToast('Failed to unblock user', 'error');
         }
     };
 
@@ -145,11 +193,12 @@ const UserProfile = () => {
 
         try {
             // Step 1: Delete messages sent by current user to profile
+            const targetId = profile.contact_id || profile.id;
             const { error: err1 } = await insforge.database
                 .from('messages')
                 .delete()
                 .eq('sender_id', currentUserId)
-                .eq('receiver_id', profile.id);
+                .eq('receiver_id', targetId);
 
             if (err1) throw err1;
 
@@ -157,7 +206,7 @@ const UserProfile = () => {
             const { error: err2 } = await insforge.database
                 .from('messages')
                 .delete()
-                .eq('sender_id', profile.id)
+                .eq('sender_id', targetId)
                 .eq('receiver_id', currentUserId);
 
             if (err2) throw err2;
@@ -400,7 +449,7 @@ const UserProfile = () => {
                     )}
 
                     <div className="action-fab-group">
-                        <div className="action-fab" onClick={() => navigate(`/chat/${profile.username}`, { state: { profile } })}>
+                        <div className="action-fab" onClick={() => navigate(`/chat/${profile.username}`, { state: { profile, isBlockedInitially: isBlocked } })}>
                             <div className="fab-icon ripple"><MessageSquare size={24} /></div>
                             <span className="fab-label">Message</span>
                         </div>
@@ -474,59 +523,37 @@ const UserProfile = () => {
                 </div>
 
                 <div className="danger-section">
-                    <button className="danger-action-btn btn-block" onClick={() => setShowBlockConfirm(true)}>
-                        <Ban size={18} /> Block {profile.name || profile.username}
-                    </button>
+                    {isBlocked ? (
+                        <button className="danger-action-btn btn-block" onClick={handleUnblockUser} style={{ color: 'var(--text-secondary)' }}>
+                            <Ban size={18} /> Unblock {profile.name || profile.username}
+                        </button>
+                    ) : (
+                        <button className="danger-action-btn btn-block" onClick={() => setShowBlockConfirm(true)}>
+                            <Ban size={18} /> Block {profile.name || profile.username}
+                        </button>
+                    )}
                     <button className="danger-action-btn btn-clear" onClick={() => setShowClearConfirm(true)} disabled={isClearing} style={{ opacity: isClearing ? 0.6 : 1 }}>
                         <Trash2 size={18} /> {isClearing ? 'Clearing...' : 'Clear Chat History'}
                     </button>
                 </div>
             </div>
 
-            {/* Block Confirmation Modal */}
             {showBlockConfirm && (
-                <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowBlockConfirm(false)}>
-                    <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Ban size={28} strokeWidth={2.5} />
-                        </div>
-                        <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Block {profile?.name || username}?</h3>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
-                            Blocked contacts will no longer be able to call you or send you messages. They won't be notified.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={handleBlockUser}>
-                                Block User
-                            </button>
-                            <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowBlockConfirm(false)}>
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <BlockUserModal
+                    contactName={profile?.name || profile?.username || username || 'this contact'}
+                    isLoading={false}
+                    onConfirm={handleBlockUser}
+                    onCancel={() => setShowBlockConfirm(false)}
+                />
             )}
 
-            {/* Clear Chat Confirmation Modal */}
             {showClearConfirm && (
-                <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowClearConfirm(false)}>
-                    <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Trash2 size={28} strokeWidth={2.5} />
-                        </div>
-                        <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Clear Chat?</h3>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
-                            This will permanently delete all messages in this conversation. This action cannot be undone.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={handleClearChat} disabled={isClearing}>
-                                {isClearing ? 'Clearing...' : 'Clear History'}
-                            </button>
-                            <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowClearConfirm(false)}>
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ClearChatModal
+                    contactName={profile?.name || profile?.username || username || 'this contact'}
+                    isLoading={isClearing}
+                    onConfirm={handleClearChat}
+                    onCancel={() => setShowClearConfirm(false)}
+                />
             )}
 
             {/* Photo Preview Modal */}

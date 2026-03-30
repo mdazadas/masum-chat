@@ -7,6 +7,7 @@ interface NotificationPayload {
     video_url?: string;
     audio_url?: string;
     sender_id: string;
+    reply_to?: number;
 }
 
 interface ContactInfo {
@@ -49,19 +50,16 @@ export const getNotificationPermission = (): NotificationPermission => {
  * Build the notification body based on message type and preview setting.
  */
 const buildBody = (payload: NotificationPayload, showPreview: boolean): string => {
-    if (!showPreview) return 'You have a new message';
-    if (payload.video_url) return '📹 Sent a video';
-    if (payload.image_url) return '📷 Sent a photo';
-    if (payload.audio_url) return '🎤 Sent a voice message';
-    return payload.text || 'New message';
+    if (!showPreview) return 'New message received';
+    if (payload.video_url) return '📹 Video message';
+    if (payload.image_url) return '📷 Photo message';
+    if (payload.audio_url) return '🎤 Voice message';
+    return payload.text || 'Sent a message';
 };
 
 /**
  * Show a browser push notification for an incoming message.
  * Respects all user settings.
- * @param payload - The raw message payload from the real-time event
- * @param contact - The sender's contact info
- * @param settings - The user's notification settings
  */
 export const showMessageNotification = (
     payload: NotificationPayload,
@@ -77,11 +75,8 @@ export const showMessageNotification = (
     const senderName = contact?.name || contact?.username || 'Someone';
     const senderAvatar = contact?.avatar || APP_ICON;
     const chatUsername = contact?.username || '';
-
     const showPreview = settings?.preview_messages !== false;
-    const requireInteraction = settings?.high_priority_notifications !== false;
     const shouldVibrate = settings?.vibration !== false;
-
     const body = buildBody(payload, showPreview);
 
     try {
@@ -91,7 +86,6 @@ export const showMessageNotification = (
             badge: APP_ICON,
             // Collapse multiple messages from the same contact
             tag: `masum-msg-${contact?.contact_id || payload.sender_id}`,
-            requireInteraction,
             silent: false,
         } as NotificationOptions);
 
@@ -101,20 +95,23 @@ export const showMessageNotification = (
         }
 
         // Click → focus window and navigate to sender's chat
-        notification.onclick = () => {
+        // Use href (not hash) for BrowserRouter compatibility. event.preventDefault prevents
+        // the browser from trying to focus a ServiceWorker client, avoiding 'message channel closed' errors.
+        notification.onclick = (event) => {
+            event.preventDefault();
             window.focus();
             if (chatUsername) {
-                // Use hash navigation compatible with react-router
-                window.location.hash = `#/chat/${chatUsername}`;
+                window.location.href = `/chat/${chatUsername}`;
             }
             notification.close();
         };
 
-        // Auto-close after 5s if not high priority
-        if (!requireInteraction) {
-            setTimeout(() => notification.close(), 5000);
-        }
-    } catch (err) {
-        console.warn('Browser notification failed:', err);
+        // Auto-close after 5 seconds to prevent hanging message channels
+        setTimeout(() => {
+            try { notification.close(); } catch { }
+        }, 5000);
+
+    } catch {
+        // Silent - notification failure is non-critical
     }
 };

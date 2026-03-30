@@ -21,5 +21,5 @@ export const insforge = createClient({
     anonKey,
     autoRefreshToken: true,
     persistSession: true,
-    storage: window.sessionStorage, // Logout when tab/browser is closed
+    storage: window.localStorage,
 });

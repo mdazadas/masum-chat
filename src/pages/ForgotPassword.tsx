@@ -138,25 +138,20 @@ const ForgotPassword = () => {
     const passwordsMatch = password === confirmPassword || !confirmPassword;
 
     return (
-        <div className="auth-container">
-            <div className="auth-card">
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-                    <div style={{
-                        width: '64px',
-                        height: '64px',
-                        borderRadius: '16px',
-                        backgroundColor: 'var(--primary-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: '0 8px 16px var(--primary-light)'
-                    }}>
-                        <MessageCircle size={36} color="white" fill="white" />
+        <div className="auth-container premium-mesh-bg">
+            <div className="auth-card fade-in" style={{ animationDelay: '0.1s' }}>
+                <div className="auth-brand-wrapper">
+                    <div className="auth-brand-icon" style={{ position: 'relative' }}>
+                        <div className="auth-brand-ring"></div>
+                        <MessageCircle size={36} color="white" fill="white" style={{ position: 'relative', zIndex: 2 }} />
                     </div>
+                    <h1 className="auth-title">Forgot Password</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', background: 'var(--primary-light)', padding: '4px 10px', borderRadius: '12px' }}>
+                        <div style={{ width: '6px', height: '6px', background: 'var(--primary-color)', borderRadius: '50%' }}></div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--primary-dark)', letterSpacing: '0.5px' }}>SECURE RECOVERY</span>
+                    </div>
+                    <p className="auth-subtitle">Reset your account password easily.</p>
                 </div>
-                <h1 className="auth-title">Forgot Password</h1>
-
-                <p className="auth-subtitle">Reset your account password easily.</p>
 
                 {recoveryStep === 1 && (
                     <form onSubmit={handleSendOTP}>
@@ -177,13 +172,13 @@ const ForgotPassword = () => {
                             />
                             <label htmlFor="email" className="input-label">Email ID</label>
                         </div>
-                        <button type="submit" className="btn btn-primary" disabled={loading || !isEmailValid}>
+                        <button type="submit" className="btn btn-primary" style={{ height: '54px' }} disabled={loading || !isEmailValid}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                    <span className="spinner-small" /> Sending...
+                                    <span className="spinner-small" /> Sending code...
                                 </span>
                             ) : (
-                                <><Send size={20} /> Send OTP</>
+                                <><Send size={18} /> Send OTP Now</>
                             )}
                         </button>
                     </form>
@@ -212,13 +207,13 @@ const ForgotPassword = () => {
                                 />
                             ))}
                         </div>
-                        <button className="btn btn-primary" onClick={handleVerifyOTP} disabled={otp.some(d => !d) || loading}>
+                         <button className="btn btn-primary" onClick={handleVerifyOTP} style={{ height: '54px' }} disabled={otp.some(d => !d) || loading}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                     <span className="spinner-small" /> Verifying...
                                 </span>
                             ) : (
-                                'Verify OTP'
+                                'Verify Code & Continue'
                             )}
                         </button>
 
@@ -296,52 +291,28 @@ const ForgotPassword = () => {
                                 </div>
                             )}
                         </div>
-                        <button type="submit" className="btn btn-primary" disabled={!isPasswordValid || !doPasswordsMatch || loading}>
+                        <button type="submit" className="btn btn-primary" style={{ height: '54px' }} disabled={!isPasswordValid || !doPasswordsMatch || loading}>
                             {loading ? (
                                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                     <span className="spinner-small" /> Resetting...
                                 </span>
                             ) : (
-                                <><KeyRound size={20} /> Reset Password</>
+                                <><KeyRound size={20} /> Reset Password Now</>
                             )}
                         </button>
                     </form>
                 )}
 
-                <div style={{ marginTop: '24px' }}>
-                    <Link to="/" className="btn-link">Back to Login</Link>
+                <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                    <Link to="/" className="auth-link" style={{ fontWeight: 700, fontSize: '14px' }}>Back to Login</Link>
+                </div>
+
+                <div style={{ marginTop: '32px', paddingTop: '20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center', gap: '20px', fontSize: '12px' }}>
+                    <Link to="/terms" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Terms</Link>
+                    <Link to="/privacy-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Privacy</Link>
+                    <Link to="/support" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Support</Link>
                 </div>
             </div>
-            <style>{`
-                .otp-input {
-                    background: var(--secondary-color);
-                    backdrop-filter: blur(10px);
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                    color: var(--text-primary);
-                }
-                .otp-input:focus {
-                    background: var(--surface-color);
-                    border-color: var(--primary-color);
-                    box-shadow: 0 0 0 4px var(--primary-light);
-                    transform: translateY(-2px);
-                }
-                .input-field.error {
-                    border-color: #ef4444;
-                    box-shadow: 0 0 0 1px #ef4444;
-                }
-                .auth-card {
-                    animation: fadeInScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
-                }
-                @keyframes fadeInScale {
-                    from { opacity: 0; transform: scale(0.95); }
-                    to { opacity: 1; transform: scale(1); }
-                }
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px); }
-                    50% { transform: translateY(-12px); }
-                }
-            `}</style>
         </div>
     );
 };

@@ -196,7 +196,7 @@ const MyProfile = () => {
     }
 
     return (
-        <div className="profile-container w-full h-[100dvh] bg-surface-color flex flex-col relative overflow-hidden text-text-primary">
+        <div className="profile-container premium-bg">
             {loading && <LoadingOverlay message="Syncing..." transparent />}
 
             {/* Glass Header */}
@@ -437,25 +437,6 @@ const MyProfile = () => {
             )}
 
             <style>{`
-                .profile-container {
-                    background: var(--background-color);
-                }
-                .glass-header {
-                    background: var(--surface-color);
-                    position: sticky;
-                    top: 0;
-                    z-index: 100;
-                    border-bottom: 1px solid var(--border-color);
-                }
-                .profile-content {
-                    flex: 1;
-                    padding: 20px;
-                    width: 100%;
-                    max-width: 800px;
-                    margin: 0 auto;
-                    overflow-y: auto;
-                    padding-bottom: 100px;
-                }
                 .profile-hero-section {
                     display: flex;
                     flex-direction: column;

@@ -1,4 +1,6 @@
 // Core Application Layout
+import Landing from './pages/Landing';
+import SafetyGuide from './pages/SafetyGuide';
 import Login from './pages/Login';
 import CreateAccount from './pages/CreateAccount';
 import ForgotPassword from './pages/ForgotPassword';
@@ -18,6 +20,7 @@ import TermsConditions from './pages/TermsConditions';
 import ThemeAppearance from './pages/ThemeAppearance';
 import HelpCenter from './pages/HelpCenter';
 import About from './pages/About';
+import Support from './pages/Support';
 import MediaView from './pages/MediaView';
 import CameraView from './pages/CameraView';
 import CallView from './pages/CallView';
@@ -36,33 +39,43 @@ function App() {
       <DataProvider>
         <ThemeProvider>
           <ToastProvider>
-            <div className="app-wrapper">
-              <PermissionManager />
-              <Routes>
-                <Route path="/" element={<Login />} />
-                <Route path="/create-account" element={<CreateAccount />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-                <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
-                <Route path="/chat/:username" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-                <Route path="/profile/me" element={<ProtectedRoute><MyProfile /></ProtectedRoute>} />
-                <Route path="/profile/:username" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
-                <Route path="/calls" element={<ProtectedRoute><Calls /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
-                <Route path="/privacy-status" element={<ProtectedRoute><PrivacyStatus /></ProtectedRoute>} />
-                <Route path="/blocked-users" element={<ProtectedRoute><BlockedUsers /></ProtectedRoute>} />
-                <Route path="/notifications-settings" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
-                <Route path="/theme-appearance" element={<ProtectedRoute><ThemeAppearance /></ProtectedRoute>} />
-                <Route path="/help-center" element={<ProtectedRoute><HelpCenter /></ProtectedRoute>} />
-                <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
-                <Route path="/privacy" element={<ProtectedRoute><PrivacyPolicy /></ProtectedRoute>} />
-                <Route path="/terms" element={<ProtectedRoute><TermsConditions /></ProtectedRoute>} />
-                <Route path="/media/:username" element={<ProtectedRoute><MediaView /></ProtectedRoute>} />
-                <Route path="/camera" element={<ProtectedRoute><CameraView /></ProtectedRoute>} />
-                <Route path="/call/:username" element={<ProtectedRoute><CallView /></ProtectedRoute>} />
-              </Routes>
-            </div>
+            <PermissionManager />
+            <Routes>
+              {/* Full-width Pages */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/safeguide" element={<SafetyGuide />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/create-account" element={<CreateAccount />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/support" element={<Support />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsConditions />} />
+
+              {/* Wrapped Chat App Pages */}
+              <Route path="*" element={
+                <div className="app-wrapper">
+                  <Routes>
+                    <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+                    <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
+                    <Route path="/chat/:username" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+                    <Route path="/profile/me" element={<ProtectedRoute><MyProfile /></ProtectedRoute>} />
+                    <Route path="/profile/:username" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+                    <Route path="/calls" element={<ProtectedRoute><Calls /></ProtectedRoute>} />
+                    <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                    <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+                    <Route path="/privacy-status" element={<ProtectedRoute><PrivacyStatus /></ProtectedRoute>} />
+                    <Route path="/blocked-users" element={<ProtectedRoute><BlockedUsers /></ProtectedRoute>} />
+                    <Route path="/notifications-settings" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
+                    <Route path="/theme-appearance" element={<ProtectedRoute><ThemeAppearance /></ProtectedRoute>} />
+                    <Route path="/help-center" element={<ProtectedRoute><HelpCenter /></ProtectedRoute>} />
+                    <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
+                    <Route path="/media/:username" element={<ProtectedRoute><MediaView /></ProtectedRoute>} />
+                    <Route path="/camera" element={<ProtectedRoute><CameraView /></ProtectedRoute>} />
+                    <Route path="/call/:username" element={<ProtectedRoute><CallView /></ProtectedRoute>} />
+                  </Routes>
+                </div>
+              } />
+            </Routes>
           </ToastProvider>
         </ThemeProvider>
       </DataProvider>

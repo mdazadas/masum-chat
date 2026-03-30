@@ -57,9 +57,9 @@ const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast:
             zIndex: 9999,
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px',
+            gap: '4px',
             width: '90%',
-            maxWidth: '360px',
+            maxWidth: '280px',
             pointerEvents: 'none'
         }}>
             {toasts.map(toast => (
@@ -72,19 +72,19 @@ const ToastContainer = ({ toasts, removeToast }: { toasts: Toast[], removeToast:
 const ToastItem = ({ toast, onRemove }: { toast: Toast, onRemove: () => void }) => {
     const config: Record<ToastType, { icon: React.ReactElement; bg: string; border: string; accent: string }> = {
         success: {
-            icon: <CheckCircle size={16} color="#fff" />,
-            bg: '#00a884', border: '#00c49a', accent: '#00c49a'
+            icon: <CheckCircle size={14} color="#fff" />,
+            bg: 'var(--primary-color)', border: 'var(--primary-color)', accent: 'var(--primary-dark)'
         },
         error: {
-            icon: <XCircle size={16} color="#fff" />,
+            icon: <XCircle size={14} color="#fff" />,
             bg: '#e53e3e', border: '#fc8181', accent: '#fc8181'
         },
         warning: {
-            icon: <AlertCircle size={16} color="#fff" />,
+            icon: <AlertCircle size={14} color="#fff" />,
             bg: '#d97706', border: '#fcd34d', accent: '#fcd34d'
         },
         info: {
-            icon: <InfoIcon size={16} color="#fff" />,
+            icon: <InfoIcon size={14} color="#fff" />,
             bg: '#3b82f6', border: '#93c5fd', accent: '#93c5fd'
         },
     };
@@ -96,31 +96,31 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast, onRemove: () => void }) 
             backdropFilter: 'blur(var(--glass-blur)) saturate(180%)',
             WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(180%)',
             border: `1px solid var(--glass-border)`,
-            borderLeft: `4px solid ${c.bg}`,
-            padding: '12px 14px',
-            borderRadius: '16px',
+            borderLeft: `3px solid ${c.bg}`,
+            padding: '6px 10px',
+            borderRadius: '24px',
             boxShadow: 'var(--glass-shadow)',
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
+            gap: '10px',
             pointerEvents: 'auto',
             animation: 'toast-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}>
             {/* App logo icon */}
             <div style={{
-                width: 36, height: 36, borderRadius: 10,
+                width: 22, height: 22, borderRadius: 11,
                 background: `linear-gradient(135deg, ${c.bg}, ${c.accent})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, boxShadow: `0 4px 12px ${c.bg}44`
+                flexShrink: 0, boxShadow: `0 2px 6px var(--primary-glow)`
             }}>
-                <MessageCircle size={18} color="white" fill="white" />
+                <MessageCircle size={12} color="white" fill="white" />
             </div>
             {/* Content */}
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: c.bg, letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 2 }}>
+                <div style={{ fontSize: '8px', fontWeight: 800, color: c.bg, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 1 }}>
                     Notification
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.4, opacity: 0.95 }}>
+                <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.2, opacity: 0.95 }}>
                     {toast.message}
                 </div>
             </div>
@@ -131,7 +131,7 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast, onRemove: () => void }) 
                     background: 'rgba(255,255,255,0.1)',
                     border: 'none',
                     color: 'var(--text-secondary)',
-                    padding: '6px',
+                    padding: '4px',
                     borderRadius: '50%',
                     cursor: 'pointer',
                     display: 'flex',
@@ -139,7 +139,7 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast, onRemove: () => void }) 
                     transition: 'all 0.2s ease'
                 }}
             >
-                <X size={14} />
+                <X size={12} />
             </button>
             <style>{`
                 @keyframes toast-pop {

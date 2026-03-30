@@ -26,6 +26,7 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+temp_brace_log.txt
 
 # Type-check cache
 *.tsbuildinfo

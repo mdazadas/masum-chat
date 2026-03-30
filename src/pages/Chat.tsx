@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback, memo, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
@@ -6,7 +6,7 @@ import {
     Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
     Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
     Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
-    Search, Palette, Ban
+    Search, Palette, Ban, AlertCircle
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useToast } from '../context/ToastContext';
@@ -16,6 +16,8 @@ import Avatar from '../components/Avatar';
 import LoadingOverlay from '../components/LoadingOverlay';
 import FloatingActionSheet from '../components/FloatingActionSheet';
 import { useData } from '../context/DataContext';
+import ClearChatModal from '../components/ClearChatModal';
+import BlockUserModal from '../components/BlockUserModal';
 
 interface Message {
     id: number;
@@ -23,7 +25,7 @@ interface Message {
     text: string;
     time: string;
     sender: 'me' | 'other';
-    status: 'sent' | 'delivered' | 'read';
+    status: 'sent' | 'delivered' | 'read' | 'failed';
     is_deleted?: boolean;
     image?: string | null;
     audio?: string | null; // Added audio support
@@ -171,7 +173,10 @@ const SwipeableMessage = memo(({
     navigate,
     username,
     showDateSeparator,
-    dateLabel
+    dateLabel,
+    onRetry,
+    onDeleteFailed,
+    settings
 }: any) => {
     const [swipeX, setSwipeX] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
@@ -197,7 +202,7 @@ const SwipeableMessage = memo(({
     const handleTouchEnd = () => {
         if (swipeX >= swipeThreshold) {
             onReply(msg);
-            if (navigator.vibrate) navigator.vibrate(10);
+            if (settings?.vibration !== false && navigator.vibrate) navigator.vibrate(10);
         }
         setSwipeX(0);
         setIsSwiping(false);
@@ -394,7 +399,30 @@ const SwipeableMessage = memo(({
                                             <span className="message-time">{msg.time}</span>
                                             {msg.sender === 'me' && (
                                                 <span className="status-ticks">
-                                                    {(msg.optimistic || msg.uploading) ? (
+                                                    {msg.status === 'failed' ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                                            <div title="Failed to send" style={{ display: 'flex', alignItems: 'center' }}>
+                                                                <AlertCircle size={14} color="#ef4444" />
+                                                                <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700, marginLeft: '4px' }}>Failed</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                                <button
+                                                                    className="failed-action-btn"
+                                                                    onClick={(e) => { e.stopPropagation(); onRetry(msg); }}
+                                                                    style={{ background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                                                >
+                                                                    Retry
+                                                                </button>
+                                                                <button
+                                                                    className="failed-action-btn"
+                                                                    onClick={(e) => { e.stopPropagation(); onDeleteFailed(msg); }}
+                                                                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (msg.optimistic || msg.uploading) ? (
                                                         <Clock size={12} className="tick-pending" />
                                                     ) : msg.status === 'read' ? (
                                                         <CheckCheck size={14} className="tick-blue" />
@@ -541,7 +569,8 @@ const Chat = () => {
         globalTyping,
         setActiveChatId,
         userId,
-        playSound
+        playSound,
+        clearLocalChat
     } = useData();
     const chatWallpaper = settings?.chat_wallpaper;
 
@@ -567,7 +596,8 @@ const Chat = () => {
     });
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
-    const [isBlocked, setIsBlocked] = useState(false);
+    const [isBlocked, setIsBlocked] = useState(location.state?.isBlockedInitially || false);
+    const [isBlockedByReceiver, setIsBlockedByReceiver] = useState(location.state?.isBlockedByReceiverInitially || false);
     const [showUnreadIndicator] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [badgeText, setBadgeText] = useState('');
@@ -627,47 +657,10 @@ const Chat = () => {
     useEffect(() => { userIdRef.current = userId; }, [userId]);
     useEffect(() => { receiverIdRef.current = receiverId; }, [receiverId]);
     useEffect(() => { contactsRef.current = contacts; }, [contacts]);
-    // Track if we're currently syncing FROM cache to avoid a loop
-    const isSyncingFromCache = useRef(false);
-
-    // REAL-TIME SYNC: Reflect global cache updates in local state
-    // This ensures that when handleNewMessage (in DataContext) updates the cache,
-    // the active chat page sees it immediately.
-    useEffect(() => {
-        if (!username) return;
-        const cached = messagesCache[username];
-
-        // If cache was cleared (e.g., after clear chat), reset local messages too
-        if (!cached || cached.length === 0) {
-            setMessages([]);
-            return;
-        }
-
-        // Efficient check: last message ID or length changed in the cache
-        setMessages(prev => {
-            const lastCached = cached[cached.length - 1];
-            const lastLocal = prev[prev.length - 1];
-
-            const lengthChanged = cached.length !== prev.length;
-            const idChanged = lastCached && lastLocal && lastCached.id !== lastLocal.id;
-            const uploadDone = prev.some(m => m.uploading) && !cached.some(m => m.uploading);
-
-            if (lengthChanged || idChanged || uploadDone) {
-                isSyncingFromCache.current = true;
-                return cached;
-            }
-            return prev;
-        });
-    }, [messagesCache, username]);
 
     // CACHE SYNC: Mirror local outgoing messages back to the global provider
     // Only runs when user sends a new optimistic/uploading message (not from cache sync)
     useEffect(() => {
-        if (isSyncingFromCache.current) {
-            // Reset the guard and skip — this update came FROM cache, not from user
-            isSyncingFromCache.current = false;
-            return;
-        }
         if (username && messages.length > 0) {
             const hasLocalMessages = messages.some(m => m.optimistic || m.uploading);
             if (hasLocalMessages) {
@@ -747,11 +740,11 @@ const Chat = () => {
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
             target.classList.add('highlight-message');
             setTimeout(() => target.classList.remove('highlight-message'), 2000);
-            if (navigator.vibrate) navigator.vibrate(20);
+            if (settings?.vibration !== false && navigator.vibrate) navigator.vibrate(20);
         } else {
             showToast('Original message not found', 'info');
         }
-    }, [showToast]);
+    }, [showToast, settings?.vibration]);
 
     const uploadAndSendMedia = useCallback(async (
         file: Blob | string | File,
@@ -891,29 +884,17 @@ const Chat = () => {
 
             // 7. Update UI with final URL and real database ID
             const realId = dbData?.id;
-            const updatedMsg = {
-                id: realId || tempId,
-                image: type === 'audio' ? null : mediaUrl,
-                audio: type === 'audio' ? mediaUrl : null,
-                uploading: false,
-                optimistic: false, // Confirmed
-                uploadProgress: 100
-            };
 
-            setMessages(prev => {
-                const updated = prev.map(m => {
-                    if (m.id === tempId || m.clientId === tempId) {
-                        return { ...m, ...updatedMsg, id: realId || tempId, clientId: tempId, status: 'sent' as 'sent', uploading: false, optimistic: false };
-                    }
-                    return m;
-                });
-                return updated;
-            });
+            // WE DO NOT SET LOCAL STATE HERE Anymore.
+            // If we did, the WebSocket would ALSO push it, causing duplicates.
+            // By letting the WebSocket handle it smoothly, the optimistic `uploading` bubble
+            // gracefully transitions into the final `sent` bubble with the real ID.
 
             // 8. Force real-time broadcast to both users (fixes media popping in and out)
             const publishPayload = {
                 ...insertPayload,
                 id: realId || tempId,
+                clientId: tempId, // CRITICAL: Tells the receiver's local cache which optimistic message to swap
                 created_at: new Date().toISOString()
             };
 
@@ -926,7 +907,7 @@ const Chat = () => {
         } catch (err) {
             console.error(`Error sending ${type}:`, err);
             showToast(`Failed to send ${type}`, 'error');
-            setMessages(prev => prev.filter(m => m.id !== tempId));
+            setMessages(prev => prev.map(m => (m.id === tempId || m.clientId === tempId) ? { ...m, status: 'failed', uploading: false, optimistic: false, uploadProgress: 0 } : m));
         } finally {
             // We NO LONGER revoke the object URL immediately here.
             // React might still be rendering it. The browser will garbage collect it
@@ -964,6 +945,23 @@ const Chat = () => {
                     const pid = (profile as any).contact_id || profile.id;
                     setReceiver(profile);
                     setReceiverId(pid);
+
+                    // Check block status from DB (both directions) — persists across refresh
+                    if (userId) {
+                        insforge.database
+                            .from('blocked_users')
+                            .select('blocker_id,blocked_id')
+                            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${pid}),and(blocker_id.eq.${pid},blocked_id.eq.${userId})`)
+                            .then(({ data: blockRows }) => {
+                                if (blockRows) {
+                                    const iHaveBlocked = blockRows.some((r: any) => r.blocker_id === userId && r.blocked_id === pid);
+                                    const theyHaveBlocked = blockRows.some((r: any) => r.blocker_id === pid && r.blocked_id === userId);
+                                    setIsBlocked(iHaveBlocked);
+                                    setIsBlockedByReceiver(theyHaveBlocked);
+                                }
+                            })
+                            .catch(() => { });
+                    }
 
                     // Fetch messages � 50 most recent, newest-first
                     const msgRes = await insforge.database
@@ -1016,8 +1014,8 @@ const Chat = () => {
                             initialUnreadCount.current = unreadMessages.length;
                         }
                         setMessages(prev => {
-                            // Keep local outgoing messages (uploading OR optimistic)
-                            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic));
+                            // Keep local outgoing messages (uploading OR optimistic OR failed)
+                            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic || m.status === 'failed'));
 
                             // Merge with DB messages, avoiding duplicates by clientId
                             const filteredLocal = localOnly.filter(local =>
@@ -1158,6 +1156,27 @@ const Chat = () => {
         }
     };
 
+    // Realtime: Listen for Block Status Updates
+    useEffect(() => {
+        const handleBlockStatus = (e: any) => {
+            const detail = e.detail;
+            if (!detail || !userId || !receiverId) return;
+
+            // Type: 'block' or 'unblock'
+            // If the OTHER user blocked/unblocked ME
+            if (detail.blocker_id === receiverId && detail.blocked_id === userId) {
+                setIsBlockedByReceiver(detail.type === 'block');
+            }
+            // If I blocked/unblocked the OTHER user
+            if (detail.blocker_id === userId && detail.blocked_id === receiverId) {
+                setIsBlocked(detail.type === 'block');
+            }
+        };
+
+        window.addEventListener('masum-block-status-change', handleBlockStatus);
+        return () => window.removeEventListener('masum-block-status-change', handleBlockStatus);
+    }, [userId, receiverId]);
+
     // Realtime: Sync local state when global cache updates
     useEffect(() => {
         if (!username || !messagesCache[username]) return;
@@ -1170,14 +1189,14 @@ const Chat = () => {
         lastDBSyncRef.current = cacheKey;
 
         setMessages(prev => {
-            // Keep local outgoing messages (uploading OR optimistic) that aren't yet in the server cache
-            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic));
+            // Keep local outgoing messages (uploading OR optimistic OR failed) that aren't yet in the server cache
+            const localOnly = prev.filter(m => m.sender === 'me' && (m.uploading || m.optimistic || m.status === 'failed'));
 
-            // Only keep local messages that don't match anything in the cached list (by internal ID or text)
-            // For media messages (which often have empty text), we MUST match by ID only during upload
+            // Only keep local messages that don't match anything in the cached list (by real ID, clientId or text)
             const filteredLocal = localOnly.filter(local =>
                 !cached.some(c =>
                     c.id === local.id ||
+                    (local.clientId !== undefined && c.clientId === local.clientId) ||
                     (local.text && c.text === local.text && c.sender === 'me')
                 )
             );
@@ -1295,6 +1314,10 @@ const Chat = () => {
                 if (unseenIds.length > 0) {
                     (async () => {
                         try {
+                            const { data: sessionData } = await insforge.auth.getCurrentSession();
+                            const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
+                            if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
+                            
                             await insforge.database
                                 .from('messages')
                                 .update({ is_seen: true })
@@ -1463,6 +1486,12 @@ const Chat = () => {
                 .eq('blocker_id', userId)   // Fixed: was 'user_id'
                 .eq('blocked_id', receiverId);
             if (error) throw error;
+
+            // Real-time broadcast to both users' channels to trigger instant UI updates
+            const payload = { type: 'unblock', blocker_id: userId, blocked_id: receiverId };
+            insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload).catch(console.error);
+            insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload).catch(console.error);
+
             setIsBlocked(false);
             showToast('User unblocked', 'success');
         } catch (err) {
@@ -1575,6 +1604,7 @@ const Chat = () => {
             // 4. Force real-time broadcast to both users
             const publishPayload = {
                 id: dbData?.id || tempId,
+                clientId: tempId, // CRITICAL: Links the DB response to the local optimistic bubble
                 sender_id: currentUserId,
                 receiver_id: currentReceiverId,
                 text: textToSend,
@@ -1589,25 +1619,70 @@ const Chat = () => {
             // Publish to self (other tabs)
             insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload).catch(() => { });
 
-            // Replace tempId with real database ID without any layout shift
-            if (dbData?.id) {
-                setMessages(prev => {
-                    const updated = prev.map(m => {
-                        if (m.id === tempId || m.clientId === tempId) {
-                            return { ...m, id: dbData.id, clientId: tempId, optimistic: false, status: 'sent' as 'sent' };
-                        }
-                        return m;
-                    });
-                    if (username) setTimeout(() => cacheMessages(username, updated), 0);
-                    return updated;
-                });
-            }
+            // WE DO NOT SET LOCAL STATE HERE Anymore.
+            // If we did, the WebSocket would ALSO push it, causing duplicates.
+            // By letting the WebSocket handle it smoothly, the optimistic bubble
+            // gracefully transitions into the final `sent` bubble with the real ID.
         } catch (error: any) {
             console.error('handleSendMessage error:', error);
             showToast('Failed to send message', 'error');
             setMessages(prev => prev.filter(m => m.id !== tempId));
         }
     };
+
+    const handleRetryMessage = async (msg: Message) => {
+        // Toggle status back to sending (optimistic)
+        setMessages(prev => prev.map(m => (m.clientId === msg.clientId || m.id === msg.id) ? { ...m, status: 'sent', optimistic: true } : m));
+
+        try {
+            const currentUserId = userIdRef.current;
+            const currentReceiverId = receiverIdRef.current;
+            if (!currentUserId || !currentReceiverId) return;
+
+            const { data: sessionData } = await insforge.auth.getCurrentSession();
+            const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
+            if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) {
+                throw new Error('Session expired');
+            }
+
+            const publishPayload = {
+                sender_id: currentUserId,
+                receiver_id: currentReceiverId,
+                text: msg.text,
+                clientId: msg.clientId || msg.id
+            };
+
+            const { error } = await insforge.database
+                .from('messages')
+                .insert([publishPayload])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Database insert success - real-time will handle the rest
+        } catch (error) {
+            console.error('Retry failed:', error);
+            setMessages(prev => prev.map(m => (m.clientId === msg.clientId || m.id === msg.id) ? { ...m, status: 'failed', optimistic: false } : m));
+        }
+    };
+
+    const handleDeleteFailedMessage = (msg: Message) => {
+        setMessages(prev => prev.filter(m => (m.clientId !== msg.clientId && m.id !== msg.id)));
+    };
+
+    // Auto-retry logic: Check for failed messages every 20 seconds and retry them
+    useEffect(() => {
+        const timer = setInterval(() => {
+            const failedMessages = messages.filter(m => m.status === 'failed' && m.sender === 'me');
+            if (failedMessages.length > 0) {
+                console.log(`Auto-retrying ${failedMessages.length} failed messages...`);
+                failedMessages.forEach(handleRetryMessage);
+            }
+        }, 20000); // 20 seconds interval
+
+        return () => clearInterval(timer);
+    }, [messages]);
 
     const deleteMessage = async (forEveryone: boolean) => {
         if (!longPressedMsg) return;
@@ -1686,18 +1761,15 @@ const Chat = () => {
         try {
             const { error } = await insforge.database
                 .from('blocked_users')
-                .insert([{ blocker_id: userId, blocked_id: receiverId }]);
+                .upsert([{ blocker_id: userId, blocked_id: receiverId }], { onConflict: 'blocker_id,blocked_id' });
             if (error) throw error;
 
+            // Real-time broadcast to both users' channels to trigger instant UI updates
+            const payload = { type: 'block', blocker_id: userId, blocked_id: receiverId };
+            insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload).catch(console.error);
+            insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload).catch(console.error);
+
             setIsBlocked(true);
-            const systemMsg: Message = {
-                id: Date.now(),
-                text: "You blocked this contact. Tap to unblock.",
-                time: "",
-                sender: "me",
-                status: "read"
-            };
-            setMessages(prev => [...prev, systemMsg]);
             showToast(`${username} has been blocked`, 'info');
         } catch (err: any) {
             console.error('Block error:', err);
@@ -1714,10 +1786,30 @@ const Chat = () => {
     };
 
     const executeClearChat = async () => {
-        if (!userId || !receiverId) return;
+        if (!userId || !receiverId || !username) return;
         setActionLoading(true);
         setLoadingMessage('Clearing history...');
+
+        // ✅ Instantly clear local state and cache BEFORE the async DB call.
+        // This eliminates the flash of old messages when the chat is reopened.
+        setMessages([]);
+        clearLocalChat(username);
+        setContacts((prev: any[]) => {
+            const idx = prev.findIndex(c => c.contact_id === receiverId);
+            if (idx === -1) return prev;
+            const updated = { ...prev[idx], preview: '', time: '' };
+            const rest = prev.filter((_, i) => i !== idx);
+            return [updated, ...rest];
+        });
+        setShowClearConfirm(false);
+
         try {
+            // Step 0: Sever 'reply_to' foreign keys to prevent FK constraint errors on bulk delete
+            await insforge.database
+                .from('messages')
+                .update({ reply_to: null })
+                .or(`and(sender_id.eq.${userId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${userId})`);
+
             // Step 1: Delete messages sent by user to receiver
             const { error: err1 } = await insforge.database
                 .from('messages')
@@ -1736,19 +1828,8 @@ const Chat = () => {
 
             if (err2) throw err2;
 
-            setMessages([]);
-
-            // Optimistic contact preview update
-            setContacts((prev: any[]) => {
-                const idx = prev.findIndex(c => c.contact_id === receiverId);
-                if (idx === -1) return prev;
-                const updated = { ...prev[idx], preview: '', time: '' };
-                const rest = prev.filter((_, i) => i !== idx);
-                return [updated, ...rest];
-            });
-
-            setShowClearConfirm(false);
-            showToast('Chat history deleted permanently', 'info');
+            showToast('Chat history cleared permanently', 'info');
+            navigate('/home');
         } catch (err) {
             console.error("Clear chat error:", err);
             showToast('Failed to clear chat history', 'error');
@@ -1935,6 +2016,9 @@ const Chat = () => {
                             username={username}
                             showDateSeparator={showDateSeparator}
                             dateLabel={dateLabel}
+                            onRetry={handleRetryMessage}
+                            onDeleteFailed={handleDeleteFailedMessage}
+                            settings={settings}
                         />
                     );
                 })}
@@ -1983,13 +2067,96 @@ const Chat = () => {
 
             {
                 isBlocked ? (
-                    <div className="blocked-bar">
-                        <button className="blocked-btn danger" onClick={handleClearChat}>
-                            <Trash2 size={18} /> Delete chat
-                        </button>
-                        <button className="blocked-btn" onClick={handleUnblock}>
-                            <RefreshCcw size={18} /> Unblock contact
-                        </button>
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: 'clamp(12px, 3vw, 16px)',
+                        backgroundColor: 'var(--surface-color)',
+                        borderTop: '1px solid var(--border-color)',
+                    }}>
+                        {/* Banner */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                            borderRadius: '12px',
+                            padding: '10px 14px',
+                            width: '100%',
+                        }}>
+                            <Ban size={16} color="#ef4444" style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: 'clamp(12px, 3.2vw, 14px)', fontWeight: 600, color: '#ef4444', lineHeight: 1.4 }}>
+                                You have blocked this contact. They cannot send you messages or calls.
+                            </span>
+                        </div>
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                            <button
+                                onClick={handleClearChat}
+                                style={{
+                                    flex: 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    padding: 'clamp(10px, 2.5vw, 13px)',
+                                    borderRadius: '14px',
+                                    backgroundColor: 'transparent',
+                                    border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                                    color: '#ef4444',
+                                    fontSize: 'clamp(12px, 3vw, 14px)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <Trash2 size={15} /> Delete chat
+                            </button>
+                            <button
+                                onClick={handleUnblock}
+                                style={{
+                                    flex: 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    padding: 'clamp(10px, 2.5vw, 13px)',
+                                    borderRadius: '14px',
+                                    backgroundColor: 'var(--primary-color)',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: 'clamp(12px, 3vw, 14px)',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <RefreshCcw size={15} /> Unblock
+                            </button>
+                        </div>
+                    </div>
+                ) : isBlockedByReceiver ? (
+                    <div style={{
+                        padding: '16px 20px',
+                        marginBottom: '4px',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        width: '100%'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            backgroundColor: 'rgba(107, 114, 128, 0.08)',
+                            backdropFilter: 'blur(10px)',
+                            WebkitBackdropFilter: 'blur(10px)',
+                            border: '1px solid rgba(107, 114, 128, 0.2)',
+                            borderRadius: '24px',
+                            padding: '14px 24px',
+                            maxWidth: '100%',
+                            textAlign: 'left',
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.03)'
+                        }}>
+                            <AlertCircle size={20} color="var(--text-secondary)" style={{ flexShrink: 0, opacity: 0.8 }} />
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                You have been blocked by this user. You can no longer send messages or audio calls.
+                            </span>
+                        </div>
                     </div>
                 ) : (
                     <div className="chat-input-wrapper">
@@ -2162,52 +2329,24 @@ const Chat = () => {
             }
 
             {
-                showBlockConfirm && createPortal(
-                    <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }} onClick={() => setShowBlockConfirm(false)}>
-                        <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', backgroundColor: 'var(--surface-color)' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Ban size={28} strokeWidth={2.5} />
-                            </div>
-                            <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Block {receiver?.name || username}?</h3>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
-                                Blocked contacts will no longer be able to call you or send you messages. They won't be notified.
-                            </p>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={confirmBlock}>
-                                    Block User
-                                </button>
-                                <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowBlockConfirm(false)}>
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    </div>,
-                    document.body
+                showBlockConfirm && (
+                    <BlockUserModal
+                        contactName={receiver?.name || username || 'this contact'}
+                        isLoading={actionLoading}
+                        onConfirm={confirmBlock}
+                        onCancel={() => setShowBlockConfirm(false)}
+                    />
                 )
             }
 
             {
-                showClearConfirm && createPortal(
-                    <div className="overlay-backdrop" style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }} onClick={() => setShowClearConfirm(false)}>
-                        <div className="profile-glass-card" style={{ padding: '32px 24px', width: '90%', maxWidth: '340px', textAlign: 'center', borderRadius: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', backgroundColor: 'var(--surface-color)' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ margin: '0 auto 16px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Trash2 size={28} strokeWidth={2.5} />
-                            </div>
-                            <h3 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>Clear Chat?</h3>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500, marginBottom: '28px', lineHeight: 1.5 }}>
-                                This will permanently delete all messages in this conversation. This action cannot be undone.
-                            </p>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <button className="premium-btn-danger" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px' }} onClick={executeClearChat}>
-                                    Clear History
-                                </button>
-                                <button className="premium-btn-secondary" style={{ width: '100%', padding: '14px', borderRadius: '16px', fontWeight: 600, fontSize: '15px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={() => setShowClearConfirm(false)}>
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    </div>,
-                    document.body
+                showClearConfirm && (
+                    <ClearChatModal
+                        contactName={receiver?.name || username || 'this contact'}
+                        isLoading={actionLoading}
+                        onConfirm={executeClearChat}
+                        onCancel={() => setShowClearConfirm(false)}
+                    />
                 )
             }
 
