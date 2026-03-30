@@ -899,9 +899,9 @@ const Chat = () => {
             };
 
             // Publish to receiver
-            insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload).catch(() => { });
+            Promise.resolve(insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload)).catch(() => { });
             // Publish to self (other tabs)
-            insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload).catch(() => { });
+            Promise.resolve(insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload)).catch(() => { });
 
             showToast(`${label} sent`, 'success');
         } catch (err) {
@@ -948,19 +948,21 @@ const Chat = () => {
 
                     // Check block status from DB (both directions) — persists across refresh
                     if (userId) {
-                        insforge.database
-                            .from('blocked_users')
-                            .select('blocker_id,blocked_id')
-                            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${pid}),and(blocker_id.eq.${pid},blocked_id.eq.${userId})`)
-                            .then(({ data: blockRows }) => {
-                                if (blockRows) {
-                                    const iHaveBlocked = blockRows.some((r: any) => r.blocker_id === userId && r.blocked_id === pid);
-                                    const theyHaveBlocked = blockRows.some((r: any) => r.blocker_id === pid && r.blocked_id === userId);
-                                    setIsBlocked(iHaveBlocked);
-                                    setIsBlockedByReceiver(theyHaveBlocked);
-                                }
-                            })
-                            .catch(() => { });
+                        try {
+                            const { data: blockRows } = await insforge.database
+                                .from('blocked_users')
+                                .select('blocker_id,blocked_id')
+                                .or(`and(blocker_id.eq.${userId},blocked_id.eq.${pid}),and(blocker_id.eq.${pid},blocked_id.eq.${userId})`);
+                            
+                            if (blockRows) {
+                                const iHaveBlocked = (blockRows as any).some((r: any) => r.blocker_id === userId && r.blocked_id === pid);
+                                const theyHaveBlocked = (blockRows as any).some((r: any) => r.blocker_id === pid && r.blocked_id === userId);
+                                setIsBlocked(iHaveBlocked);
+                                setIsBlockedByReceiver(theyHaveBlocked);
+                            }
+                        } catch (err) {
+                            // Silent failure
+                        }
                     }
 
                     // Fetch messages � 50 most recent, newest-first
@@ -1489,8 +1491,8 @@ const Chat = () => {
 
             // Real-time broadcast to both users' channels to trigger instant UI updates
             const payload = { type: 'unblock', blocker_id: userId, blocked_id: receiverId };
-            insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload).catch(console.error);
-            insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload).catch(console.error);
+            Promise.resolve(insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload)).catch(console.error);
+            Promise.resolve(insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload)).catch(console.error);
 
             setIsBlocked(false);
             showToast('User unblocked', 'success');
@@ -1615,9 +1617,9 @@ const Chat = () => {
             };
 
             // Publish to receiver
-            insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload).catch(() => { });
+            Promise.resolve(insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload)).catch(() => { });
             // Publish to self (other tabs)
-            insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload).catch(() => { });
+            Promise.resolve(insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload)).catch(() => { });
 
             // WE DO NOT SET LOCAL STATE HERE Anymore.
             // If we did, the WebSocket would ALSO push it, causing duplicates.
@@ -1766,8 +1768,8 @@ const Chat = () => {
 
             // Real-time broadcast to both users' channels to trigger instant UI updates
             const payload = { type: 'block', blocker_id: userId, blocked_id: receiverId };
-            insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload).catch(console.error);
-            insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload).catch(console.error);
+            Promise.resolve(insforge.realtime.publish(`user:${receiverId}`, 'UPDATE_block_status', payload)).catch(console.error);
+            Promise.resolve(insforge.realtime.publish(`user:${userId}`, 'UPDATE_block_status', payload)).catch(console.error);
 
             setIsBlocked(true);
             showToast(`${username} has been blocked`, 'info');
@@ -2249,11 +2251,11 @@ const Chat = () => {
                                             const lastTyping = (target as any).lastTypingBroadcast || 0;
                                             if (Date.now() - lastTyping > 2000) {
                                                 (target as any).lastTypingBroadcast = Date.now();
-                                                insforge.realtime.publish(
+                                                Promise.resolve(insforge.realtime.publish(
                                                     'presence:global',
                                                     'typing',
                                                     { sender_id: userId, receiver_id: receiverId }
-                                                ).catch(() => { /* silent */ });
+                                                )).catch(() => { /* silent */ });
                                             }
                                         }}
                                         onKeyDown={(e) => {
