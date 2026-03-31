@@ -1,4 +1,4 @@
-// Core Application Layout
+// Core Application Layout - Build v1.0.1
 import Landing from './pages/Landing';
 import SafetyGuide from './pages/SafetyGuide';
 import Login from './pages/Login';
