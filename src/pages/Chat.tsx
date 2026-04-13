@@ -4,7 +4,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
     ArrowLeft, Phone, Video, Check, CheckCheck, MoreVertical,
     Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
-    Reply, RefreshCcw, ImagePlay, FileText, Clock,
+    Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
     Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
     Search, Palette, Ban, AlertCircle, Download
 } from 'lucide-react';
@@ -293,7 +293,6 @@ const SwipeableMessage = memo(({
                                                         playsInline
                                                         preload="auto"
                                                         muted
-                                                        onLoadedData={() => setMediaLoaded(true)}
                                                         style={{
                                                             opacity: msg.uploading ? 0 : 1,
                                                             transition: 'opacity 0.3s ease',
@@ -330,7 +329,6 @@ const SwipeableMessage = memo(({
                                                         alt="Sent"
                                                         className="message-image-content"
                                                         loading="eager"
-                                                        onLoad={() => setMediaLoaded(true)}
                                                         style={{
                                                             width: '100%',
                                                             height: '100%',
