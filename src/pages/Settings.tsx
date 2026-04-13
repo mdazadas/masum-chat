@@ -171,12 +171,12 @@ const Settings = () => {
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Settings</span>
+                    <h2 className="screen-header-title">Settings</h2>
                 </div>
             </div>
 
@@ -195,12 +195,12 @@ const Settings = () => {
                                 src={userData.avatar_url}
                                 name={userData.name}
                                 size={64}
-                                style={{ border: '3px solid white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                style={{ border: '3px solid var(--surface-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                             />
                             <div style={{
                                 position: 'absolute', bottom: 0, right: 0,
                                 width: '22px', height: '22px', borderRadius: '50%',
-                                background: 'var(--primary-color)', border: '3px solid white',
+                                background: 'var(--primary-color)', border: '3px solid var(--surface-color)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white'
                             }}>
                                 <User size={12} strokeWidth={3} />
@@ -433,7 +433,7 @@ const SettingRow = ({ icon, title, subtitle, onClick, isLast }: { icon: any, tit
             display: 'flex',
             alignItems: 'center',
             padding: '16px 20px',
-            borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.05)',
+            borderBottom: isLast ? 'none' : '1px solid var(--border-color)',
             gap: '16px',
             cursor: 'pointer'
         }}
@@ -455,7 +455,7 @@ const SettingRow = ({ icon, title, subtitle, onClick, isLast }: { icon: any, tit
             <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)', marginBottom: '2px' }}>{title}</div>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>{subtitle}</div>
         </div>
-        <ChevronRight size={18} color="rgba(0,0,0,0.2)" />
+        <ChevronRight size={18} color="var(--border-color)" />
     </div>
 );
 

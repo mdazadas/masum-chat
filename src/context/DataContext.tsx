@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Phone, Video, X, PhoneCall } from 'lucide-react';
 import { insforge } from '../lib/insforge';
 import { showMessageNotification } from '../hooks/useNotifications';
+import { clearAppAuthStorage } from '../lib/authStorage';
 
 interface DataContextType {
     contacts: any[];
@@ -94,20 +95,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // so we must check both that the key exists AND that it's not the string "null".
         const profileInStorage = localStorage.getItem('masum_profile');
         const settingsInStorage = localStorage.getItem('masum_settings');
-        const hasSessionFlag = 
+        const hasSessionFlag =
             (profileInStorage && profileInStorage !== 'null') ||
             (settingsInStorage && settingsInStorage !== 'null') ||
             !!localStorage.getItem('insforge_session') ||
             !!sessionStorage.getItem('insforge_session') ||
             Object.keys(localStorage).some(k => k.toLowerCase().includes('insforge'));
-        
+
         if (!hasSessionFlag) {
             setUserId(null);
             setAuthRestored(true);
             return;
         }
 
-        setAuthRestored(false);
+        // Only set authRestored=false if we don't already have a userId
+        // This prevents flickering the ProtectedRoute back to loading after login
+        setAuthRestored(prev => {
+            if (prev) return false; // was true, now restoring again
+            return false; // was already false
+        });
         try {
             const { data, error } = await insforge.auth.getCurrentSession().catch((err: any) => ({ data: null, error: err }));
 
@@ -115,27 +121,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setUserId(data.session.user.id);
             } else if (error) {
                 // Suppress "No refresh token/CSRF token" warnings as it's expected for guests/expired sessions
-                const isNoTokenErr = error?.message?.includes('refresh token') || 
-                                     error?.status === 401 || 
-                                     error?.status === 403 || 
-                                     error?.message?.includes('CSRF token');
-                                     
+                const isNoTokenErr = error?.message?.includes('refresh token') ||
+                    error?.status === 401 ||
+                    error?.status === 403 ||
+                    error?.message?.includes('CSRF token');
+
                 if (!isNoTokenErr) {
                     console.warn("Session restore error:", error);
                 }
-                
+
                 // If the token is corrupt or refresh forbidden/unauthorized, forcefully clear it from storage to prevent infinite loops
                 if (error?.status === 403 || error?.status === 401 || error?.message?.includes('CSRF token') || error?.message?.includes('refresh token')) {
-                    Object.keys(localStorage).forEach(k => {
-                        if (k.toLowerCase().includes('insforge')) localStorage.removeItem(k);
-                    });
-                    Object.keys(sessionStorage).forEach(k => {
-                        if (k.toLowerCase().includes('insforge')) sessionStorage.removeItem(k);
-                    });
-                    insforge.auth.signOut().catch(() => {});
+                    clearAppAuthStorage();
+                    insforge.auth.signOut().catch(() => { });
                     window.dispatchEvent(new CustomEvent('masum-jwt-expired'));
                 }
-                
+
                 setUserId(null);
             } else {
                 setUserId(null);
@@ -161,8 +162,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const handleJwtExpired = async () => {
             try { await insforge.auth.signOut(); } catch { }
-            sessionStorage.clear();
-            localStorage.clear(); // Clear all local state
+            clearAppAuthStorage();
             setUserId(null);
             setContacts([]);
             setProfileData(null);
@@ -188,34 +188,59 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [messagesCache]);
 
     const playSound = useCallback((type: 'send' | 'receive' | 'tick') => {
-        // Respect user's in-app sound setting (defaults to true if undefined)
-        if (settingsRef.current && settingsRef.current.in_app_sound === false) return;
+        // Respect user's in-app sound setting (Strict default to silent)
+        if (!settingsRef.current || settingsRef.current.in_app_sound !== true) return;
 
         try {
-            if (type === 'send' || type === 'receive') {
-                const audio = new Audio(`/sounds/${type}.mp3`);
-                audio.play().catch(() => { });
-                return;
-            }
-
-            // 'tick' sound: subtle, very short double high-pitched click (Synthesized)
             const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
             if (!AudioCtx) return;
             const ctx = new AudioCtx();
 
-            [0, 0.08].forEach((delay, i) => {
+            if (type === 'tick') {
+                // Subtle 'tick' sound: very short double high-pitched click
+                [0, 0.08].forEach((delay, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(2500 + (i * 500), ctx.currentTime + delay);
+                    gain.gain.setValueAtTime(0.08, ctx.currentTime + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.04);
+                    osc.start(ctx.currentTime + delay);
+                    osc.stop(ctx.currentTime + delay + 0.04);
+                    if (i === 1) osc.onended = () => ctx.close();
+                });
+            } else if (type === 'send') {
+                // 'send' sound: upward high-pitched blip
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.connect(gain);
                 gain.connect(ctx.destination);
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(2500 + (i * 500), ctx.currentTime + delay);
-                gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.04);
-                osc.start(ctx.currentTime + delay);
-                osc.stop(ctx.currentTime + delay + 0.04);
-                if (i === 1) osc.onended = () => ctx.close();
-            });
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1600, ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.15);
+                osc.onended = () => ctx.close();
+            } else if (type === 'receive') {
+                // 'receive' sound: downward double blip
+                [0, 0.12].forEach((delay, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(i === 0 ? 1200 : 900, ctx.currentTime + delay);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.1);
+                    osc.start(ctx.currentTime + delay);
+                    osc.stop(ctx.currentTime + delay + 0.1);
+                    if (i === 1) osc.onended = () => ctx.close();
+                });
+            }
         } catch (e) {
             // Silently ignore — audio is non-critical
         }
@@ -272,7 +297,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!userId) return;
         return executeSecurely(async () => {
             const { data } = await insforge.database.from('profiles').select().eq('id', userId).maybeSingle();
-            
+
             if (data) {
                 setProfileData(data);
                 return data;
@@ -282,15 +307,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const { data: sessionData } = await insforge.auth.getCurrentSession();
             if (sessionData?.session?.user) {
                 const u = sessionData.session.user;
+                // Generate random username: email_prefix + 4 random digits
+                const emailPrefix = u.email?.split('@')[0] || 'user';
+                const randomId = Math.floor(1000 + Math.random() * 9000);
+                const generatedUsername = `${emailPrefix}_${randomId}`.toLowerCase().replace(/[^a-z0-9_.]/g, '');
+
                 const defaultProfile = {
                     id: u.id,
-                    username: u.email?.split('@')[0] || 'user_' + u.id.slice(0, 5),
-                    full_name: u.profile?.name || u.email?.split('@')[0] || 'Anonymous User',
-                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.id}`,
-                    status: 'Hey there! I am using Masum Chat.',
+                    username: generatedUsername,
+                    name: u.profile?.name || u.email?.split('@')[0] || 'Anonymous User',
+                    avatar_url: u.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.id}`,
+                    bio: 'Hey there! I am using Masum Chat.',
                     last_seen: new Date().toISOString()
                 };
-                
+
                 const { data: created } = await insforge.database.from('profiles').insert([defaultProfile]).select().maybeSingle();
                 if (created) {
                     setProfileData(created);
@@ -305,7 +335,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!userId) return;
         return executeSecurely(async () => {
             const { data } = await insforge.database.from('user_settings').select().eq('user_id', userId).maybeSingle();
-            
+
             if (data) {
                 setSettings(data);
                 return data;
@@ -317,7 +347,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 privacy_mode: true,
                 stealth_notifications: true,
                 auto_delete_hours: 24,
-                in_app_sound: true,
+                in_app_sound: false,
                 last_updated: new Date().toISOString()
             };
 
@@ -438,7 +468,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const { data: sessionData } = await insforge.auth.getCurrentSession();
                         const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
                         if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
-                        
+
                         await insforge.database.from('messages').update({ is_seen: true }).eq('id', payload.id);
                     } catch (e) { console.error('Auto-mark seen error:', e); }
                 })();
@@ -457,7 +487,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const { data: sessionData } = await insforge.auth.getCurrentSession();
                         const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
                         if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
-                        
+
                         console.log('Real-time Discovery: New contact found via message', contactId);
                         if (isIncoming && !payload.is_delivered) {
                             await insforge.database.from('messages').update({ is_delivered: true }).eq('id', payload.id);
@@ -850,7 +880,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (expiresAt && (expiresAt * 1000) < Date.now() + 15000) {
                     // Token is expired or about to expire. The SDK's autoRefreshToken should handle it,
                     // but we skip this background update to prevent a 401 trace in the console.
-                    return; 
+                    return;
                 }
 
                 // Fire database update only if authenticated

@@ -51,12 +51,12 @@ const TermsConditions = () => {
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '0 16px' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
                     <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ color: 'var(--primary-color)', fontWeight: 800 }}>Terms & Conditions</span>
+                    <h2 className="screen-header-title">Terms &amp; Conditions</h2>
                 </div>
             </div>
 

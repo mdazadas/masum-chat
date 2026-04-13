@@ -258,17 +258,17 @@ const ThemeAppearance = () => {
                     box-shadow: 0 8px 20px rgba(0, 168, 132, 0.3);
                 }
                 .inactive-theme-icon {
-                    background: rgba(0,0,0,0.04);
+                    background: var(--secondary-color);
                     color: var(--text-secondary);
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Theme & Appearance</span>
+                    <h2 className="screen-header-title">Theme &amp; Appearance</h2>
                 </div>
             </div>
 
@@ -474,7 +474,7 @@ const ThemeToggleCard = ({ active, onClick, icon, label }: { active: boolean, on
             justifyContent: 'center',
             gap: '6px',
             cursor: 'pointer',
-            border: active ? '2px solid var(--primary-color)' : '1px solid rgba(0,0,0,0.05)',
+            border: active ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
             background: active ? 'var(--secondary-color)' : 'rgba(255,255,255,0.05)',
             transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             transform: active ? 'translateY(-2px)' : 'none',

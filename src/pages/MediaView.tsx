@@ -123,11 +123,13 @@ const MediaView = () => {
     return (
         <div className="media-view-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: 'var(--surface-color)' }}>
             {/* Header */}
-            <div className="media-nav" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid var(--border-color)' }}>
-                <button className="nav-icon-btn" onClick={() => navigate(-1)}>
-                    <ArrowLeft size={24} />
-                </button>
-                <h3 style={{ fontSize: '18px', fontWeight: 600 }}>{receiverName}</h3>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <h2 className="screen-header-title white-text">{receiverName}</h2>
+                </div>
             </div>
 
             {/* Tabs */}

@@ -49,6 +49,7 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/support" element={<Support />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
 
               {/* Wrapped Chat App Pages */}

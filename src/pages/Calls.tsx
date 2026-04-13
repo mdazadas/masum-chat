@@ -110,15 +110,13 @@ const Calls = () => {
     return (
         <div className="home-container">
             {/* Header */}
-            <div className="max-w-content">
-                <nav className="top-nav" style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <button className="nav-icon-btn ripple" onClick={() => navigate('/home')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <ArrowLeft size={24} />
-                        </button>
-                        <h1 className="app-title" style={{ margin: 0, fontSize: '22px', color: 'var(--primary-dark)' }}>Calls</h1>
-                    </div>
-                    <div className="top-nav-right">
+            <div className="screen-header" style={{ padding: 0 }}>
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '12px 16px', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <h2 className="screen-header-title">Calls</h2>
+                    <div className="top-nav-right" style={{ marginLeft: 'auto' }}>
                         <div className="user-avatar-container" onClick={() => navigate('/profile/me')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Avatar
                                 src={profileData?.avatar_url}
@@ -128,7 +126,7 @@ const Calls = () => {
                             />
                         </div>
                     </div>
-                </nav>
+                </div>
             </div>
 
             {/* Standardized Search Bar */}
@@ -194,7 +192,7 @@ const Calls = () => {
                         ).map(([date, group]: [string, any[]]) => (
                             <div key={date}>
                                 <div style={{
-                                    padding: '8px 20px',
+                                    padding: '8px 16px',
                                     backgroundColor: 'var(--surface-color)',
                                     fontSize: '13px',
                                     fontWeight: 600,
@@ -219,7 +217,7 @@ const Calls = () => {
                                         <div
                                             key={call.id}
                                             className="chat-item"
-                                            style={{ cursor: 'pointer', padding: '14px 20px', backgroundColor: 'var(--surface-color)' }}
+                                            style={{ cursor: 'pointer', padding: '14px 16px', backgroundColor: 'var(--surface-color)' }}
                                             onClick={() => navigate(`/chat/${party.username}`, { state: { profile: party } })}
                                         >
                                             <div style={{ position: 'relative', flexShrink: 0 }}>

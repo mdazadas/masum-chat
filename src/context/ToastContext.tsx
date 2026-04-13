@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { CheckCircle, XCircle, AlertCircle, Info as InfoIcon, X, MessageCircle } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -37,6 +37,17 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 3000);
     }, []);
+
+    useEffect(() => {
+        const handleGlobalToast = (event: Event) => {
+            const detail = (event as CustomEvent<{ message?: string; type?: ToastType }>).detail;
+            if (!detail?.message) return;
+            showToast(detail.message, detail.type || 'info');
+        };
+
+        window.addEventListener('masum-toast', handleGlobalToast as EventListener);
+        return () => window.removeEventListener('masum-toast', handleGlobalToast as EventListener);
+    }, [showToast]);
 
     return (
         <ToastContext.Provider value={{ showToast }}>

@@ -7,14 +7,14 @@ const About = () => {
     return (
         <div className="home-container" style={{ backgroundColor: 'var(--surface-color)' }}>
             {/* Header */}
-            <nav className="top-nav">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <button className="nav-icon-btn" onClick={() => navigate(-1)}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="top-nav-title">About Masum Chat</div>
+                    <h2 className="screen-header-title">About Masum Chat</h2>
                 </div>
-            </nav>
+            </div>
 
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '40px' }} className="fade-in">
                 {/* Brand Hero Section */}

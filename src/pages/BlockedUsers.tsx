@@ -106,12 +106,12 @@ const BlockedUsers = () => {
     return (
         <div className="profile-container premium-bg">
             {actionLoading && <LoadingOverlay message={loadingMessage} transparent />}
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={handleBack} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={handleBack}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Blocked Users</span>
+                    <h2 className="screen-header-title">Blocked Users</h2>
                 </div>
             </div>
 

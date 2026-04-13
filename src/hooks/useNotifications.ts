@@ -22,6 +22,7 @@ interface UserSettings {
     preview_messages?: boolean;
     high_priority_notifications?: boolean;
     vibration?: boolean;
+    in_app_sound?: boolean;
 }
 
 /**
@@ -86,7 +87,7 @@ export const showMessageNotification = (
             badge: APP_ICON,
             // Collapse multiple messages from the same contact
             tag: `masum-msg-${contact?.contact_id || payload.sender_id}`,
-            silent: false,
+            silent: settings?.in_app_sound !== true,
         } as NotificationOptions);
 
         // Vibrate on incoming notification

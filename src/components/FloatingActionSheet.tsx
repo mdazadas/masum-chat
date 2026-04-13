@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
 
 interface FloatingActionSheetProps {
@@ -16,18 +16,6 @@ const FloatingActionSheet: React.FC<FloatingActionSheetProps> = ({
     subtitle,
     children
 }) => {
-    const [shouldRender, setShouldRender] = useState(isOpen);
-
-    useEffect(() => {
-        if (isOpen) setShouldRender(true);
-        else {
-            const timer = setTimeout(() => setShouldRender(false), 200);
-            return () => clearTimeout(timer);
-        }
-    }, [isOpen]);
-
-    if (!shouldRender) return null;
-
     return createPortal(
         <div className={`fas-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}>
             <div
@@ -60,11 +48,13 @@ const FloatingActionSheet: React.FC<FloatingActionSheetProps> = ({
                     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
                     z-index: 5000;
                     pointer-events: none;
+                    visibility: hidden;
                 }
                 .fas-overlay.open {
                     background: rgba(0, 0, 0, 0.4);
                     backdrop-filter: blur(var(--glass-blur));
                     pointer-events: auto;
+                    visibility: visible;
                 }
 
                 .fas-container {

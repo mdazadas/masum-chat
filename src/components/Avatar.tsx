@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { getInitials, getHashColor } from '../lib/utils';
 
 interface AvatarProps {
@@ -13,17 +13,17 @@ interface AvatarProps {
 const Avatar = ({ src, name, size = 40, className = '', style = {}, priority = 'auto' }: AvatarProps) => {
     const initials = useMemo(() => getInitials(name), [name]);
     const backgroundColor = useMemo(() => getHashColor(name), [name]);
+    const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
     const sizePx = typeof size === 'number' ? `${size}px` : size;
 
-    if (src && src.trim() !== '' && !src.includes('pravatar.cc')) {
+    if (src && src.trim() !== '' && !src.includes('pravatar.cc') && failedSrc !== src) {
         return (
             <img
                 src={src}
                 alt={name || 'Avatar'}
                 className={className}
                 loading={priority === 'high' ? 'eager' : 'lazy'}
-                // @ts-ignore - fetchPriority is the standard React property name
                 fetchPriority={priority}
                 style={{
                     width: sizePx,
@@ -34,7 +34,7 @@ const Avatar = ({ src, name, size = 40, className = '', style = {}, priority = '
                 }}
                 onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
-                    (e.target as HTMLImageElement).parentElement?.classList.add('avatar-fallback-active');
+                    setFailedSrc(src);
                 }}
             />
         );

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Shield, ChevronLeft, Chrome, MoreVertical, EyeOff, Smartphone, AlertTriangle } from 'lucide-react';
+import { Shield, ArrowLeft, ChevronLeft, Chrome, MoreVertical, EyeOff, Smartphone, AlertTriangle } from 'lucide-react';
 
 const SafetyGuide = () => {
     const navigate = useNavigate();
@@ -7,20 +7,13 @@ const SafetyGuide = () => {
     return (
         <div className="landing-container premium-bg" style={{ minHeight: '100vh', paddingBottom: '40px', overflowY: 'auto' }}>
             {/* Fixed Header */}
-            <div className="landing-header" style={{
-                position: 'fixed', top: 0, left: 0, right: 0, width: '100%', zIndex: 100,
-                background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)',
-                borderBottom: '1px solid var(--border-color)',
-                padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '16px'
-            }}>
-                <button
-                    onClick={() => navigate(-1)}
-                    className="secondary-action-btn"
-                    style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', padding: '4px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                >
-                    <ChevronLeft size={24} />
-                </button>
-                <div style={{ fontWeight: 800, fontSize: '18px', color: 'var(--primary-color)' }}>Safety Guide</div>
+            <div className="screen-header" style={{ position: 'fixed', top: 0, left: 0, right: 0, width: '100%' }}>
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <h2 className="screen-header-title">Safety Guide</h2>
+                </div>
             </div>
 
             <div style={{ padding: '8px 16px', paddingTop: '80px' }} className="fade-in">

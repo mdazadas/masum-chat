@@ -19,7 +19,7 @@ const Landing = () => {
             {/* Fixed Header */}
             <div className="landing-header" style={{
                 position: 'fixed', top: 0, left: 0, right: 0, width: '100%', zIndex: 100,
-                background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)',
+                background: 'var(--glass-bg)', backdropFilter: 'blur(12px)',
                 borderBottom: '1px solid var(--border-color)',
                 padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>

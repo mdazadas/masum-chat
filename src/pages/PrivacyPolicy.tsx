@@ -88,11 +88,13 @@ const PrivacyPolicy = () => {
                 .contact-card:active { transform: scale(0.98); }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
-                    <ArrowLeft size={24} />
-                </button>
-                <h3>Privacy Center</h3>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <h2 className="screen-header-title">Privacy Center</h2>
+                </div>
             </div>
 
             <div className="profile-content">
@@ -101,59 +103,61 @@ const PrivacyPolicy = () => {
                     <p>Your trust is the foundation of Masum Chats.</p>
                 </div>
 
-                <div className="profile-glass-card">
-                    <div className="policy-section">
-                        <div className="policy-header">
-                            <div className="policy-icon-box">
-                                <Shield size={20} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="profile-glass-card">
+                        <div className="policy-section">
+                            <div className="policy-header">
+                                <div className="policy-icon-box">
+                                    <Shield size={20} />
+                                </div>
+                                <h2>1. Data Ownership</h2>
                             </div>
-                            <h2>1. Data Ownership</h2>
+                            <p className="policy-content">
+                                At Masum Chat, your data belongs to you. We strictly collect only the essential information required to facilitate synchronization: your username, public profile identifiers, and encrypted message metadata. We never sell your personal information to third parties.
+                            </p>
                         </div>
-                        <p className="policy-content">
-                            At Masum Chat, your data belongs to you. We strictly collect only the essential information required to facilitate synchronization: your username, public profile identifiers, and encrypted message metadata. We never sell your personal information to third parties.
-                        </p>
                     </div>
-                </div>
 
-                <div className="profile-glass-card">
-                    <div className="policy-section">
-                        <div className="policy-header">
-                            <div className="policy-icon-box">
-                                <Lock size={20} />
+                    <div className="profile-glass-card">
+                        <div className="policy-section">
+                            <div className="policy-header">
+                                <div className="policy-icon-box">
+                                    <Lock size={20} />
+                                </div>
+                                <h2>2. Advanced Security</h2>
                             </div>
-                            <h2>2. Advanced Security</h2>
+                            <p className="policy-content">
+                                We employ industry-standard encryption protocols. While messages are stored on our cloud infrastructure for real-time delivery across your devices, they are protected by robust access controls (RLS) ensuring that only authorized participants can access specific conversation threads.
+                            </p>
                         </div>
-                        <p className="policy-content">
-                            We employ industry-standard encryption protocols. While messages are stored on our cloud infrastructure for real-time delivery across your devices, they are protected by robust access controls (RLS) ensuring that only authorized participants can access specific conversation threads.
-                        </p>
                     </div>
-                </div>
 
-                <div className="profile-glass-card">
-                    <div className="policy-section">
-                        <div className="policy-header">
-                            <div className="policy-icon-box">
-                                <Eye size={20} />
+                    <div className="profile-glass-card">
+                        <div className="policy-section">
+                            <div className="policy-header">
+                                <div className="policy-icon-box">
+                                    <Eye size={20} />
+                                </div>
+                                <h2>3. Transparency & Control</h2>
                             </div>
-                            <h2>3. Transparency & Control</h2>
+                            <p className="policy-content">
+                                You have full visibility into what others see. Through your settings, you can manage your "Last Seen" status, typing indicators, and profile visibility. We believe in providing clear, granular controls so you can tailor your privacy level to your comfort.
+                            </p>
                         </div>
-                        <p className="policy-content">
-                            You have full visibility into what others see. Through your settings, you can manage your "Last Seen" status, typing indicators, and profile visibility. We believe in providing clear, granular controls so you can tailor your privacy level to your comfort.
-                        </p>
                     </div>
-                </div>
 
-                <div className="profile-glass-card">
-                    <div className="policy-section">
-                        <div className="policy-header">
-                            <div className="policy-icon-box">
-                                <Trash2 size={20} />
+                    <div className="profile-glass-card">
+                        <div className="policy-section">
+                            <div className="policy-header">
+                                <div className="policy-icon-box">
+                                    <Trash2 size={20} />
+                                </div>
+                                <h2>4. Right to Erasure</h2>
                             </div>
-                            <h2>4. Right to Erasure</h2>
+                            <p className="policy-content">
+                                We respect your right to be forgotten. When you choose to delete your account, our systems initiate a complete purge of your profile data, contacts, and message history within 24 hours. Once deleted, this data cannot be recovered.
+                            </p>
                         </div>
-                        <p className="policy-content">
-                            We respect your right to be forgotten. When you choose to delete your account, our systems initiate a complete purge of your profile data, contacts, and message history within 24 hours. Once deleted, this data cannot be recovered.
-                        </p>
                     </div>
                 </div>
 

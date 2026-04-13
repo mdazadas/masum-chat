@@ -15,7 +15,7 @@ const SettingRow = ({ icon, title, value, onClick, isLast }: { icon: any, title:
             display: 'flex',
             alignItems: 'center',
             padding: '16px 20px',
-            borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.05)',
+            borderBottom: isLast ? 'none' : '1px solid var(--border-color)',
             cursor: 'pointer',
             transition: 'background-color 0.2s'
         }}
@@ -38,7 +38,7 @@ const SettingRow = ({ icon, title, value, onClick, isLast }: { icon: any, title:
             <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--text-primary)', marginBottom: '2px' }}>{title}</div>
             <div style={{ fontSize: '13px', color: 'var(--primary-color)', fontWeight: 600 }}>{value}</div>
         </div>
-        <ChevronRight size={18} color="rgba(0,0,0,0.2)" />
+        <ChevronRight size={18} color="var(--text-secondary)" />
     </div>
 );
 
@@ -211,13 +211,13 @@ const PrivacyStatus = () => {
                 }
                 .privacy-toggle-divider {
                     height: 1px;
-                    background: rgba(0,0,0,0.05);
+                    background: var(--border-color);
                     margin: 0 20px;
                 }
                 .premium-switch {
                     width: 48px;
                     height: 26px;
-                    background: #cbd5e1;
+                    background: var(--border-color);
                     border-radius: 20px;
                     position: relative;
                     cursor: pointer;
@@ -279,7 +279,7 @@ const PrivacyStatus = () => {
                     transition: all 0.2s;
                     text-align: left;
                 }
-                .sound-option-item:hover { background: rgba(0,0,0,0.02); }
+                .sound-option-item:hover { background: var(--secondary-color); }
                 .sound-option-item.active { background: var(--secondary-color); }
                 .radio-circle {
                     width: 20px;
@@ -313,12 +313,12 @@ const PrivacyStatus = () => {
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Privacy & Status</span>
+                    <h2 className="screen-header-title">Privacy &amp; Status</h2>
                 </div>
             </div>
 

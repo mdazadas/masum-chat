@@ -200,16 +200,17 @@ const MyProfile = () => {
             {loading && <LoadingOverlay message="Syncing..." transparent />}
 
             {/* Glass Header */}
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate('/home')}>
                         <ArrowLeft size={24} />
                     </button>
-                    <h3 style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)' }}>Profile</h3>
+                    <h2 className="screen-header-title">Profile</h2>
                 </div>
             </div>
 
             <div className="profile-content">
+                <div className="max-w-content" style={{ padding: '0 16px', paddingBottom: '80px', width: '100%' }}>
                 <div className="profile-hero-section">
                     <div
                         className="profile-avatar-wrapper"
@@ -355,15 +356,15 @@ const MyProfile = () => {
                     </div>
                 </div>
 
-
-
                 <div className="profile-footer">
                     <button onClick={() => navigate('/settings')} className="account-settings-btn ripple">
                         Manage Account
                     </button>
                     <p className="credit-text">Designed with ❤️ by MD Azad</p>
                 </div>
+                </div>{/* end max-w-content */}
             </div>
+
 
             <BottomNav activeTab="profile" />
 
@@ -475,8 +476,8 @@ const MyProfile = () => {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    border: 3px solid white;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    border: 3px solid var(--surface-color);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
                 }
                 .profile-hero-text {
                     text-align: center;
@@ -515,13 +516,21 @@ const MyProfile = () => {
                     padding: 20px;
                     margin-bottom: 16px;
                     border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
                     transition: transform 0.2s, box-shadow 0.2s;
+                }
+                [data-theme='dark'] .premium-field-card {
+                    background: #1a2a32;
+                    border-color: #263540;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
                 }
                 .premium-field-card.readonly {
                     background: transparent;
                     border: 1px dashed var(--border-color);
                     box-shadow: none;
+                }
+                [data-theme='dark'] .premium-field-card.readonly {
+                    border-color: #263540;
                 }
                 .field-header {
                     display: flex;
@@ -691,8 +700,10 @@ const MyProfile = () => {
                     cursor: pointer;
                     transition: all 0.2s;
                 }
-                .sheet-option-item:active { background: #e2e8f0; transform: scale(0.95); }
-                .sheet-option-item.delete { background: #fee2e2; }
+                .sheet-option-item:active { background: var(--secondary-color); transform: scale(0.95); }
+                .sheet-option-item.delete { background: rgba(254, 226, 226, 0.15); }
+                [data-theme='dark'] .sheet-option-item { background: #1a2a32; }
+                [data-theme='dark'] .sheet-option-item.delete { background: rgba(239, 68, 68, 0.1); }
                 .option-icon {
                     width: 44px;
                     height: 44px;
@@ -765,6 +776,11 @@ const MyProfile = () => {
                     border: 1px solid var(--border-color);
                     box-shadow: 0 20px 40px rgba(0,0,0,0.3);
                     text-align: center;
+                }
+                [data-theme='dark'] .premium-modal-card {
+                    background: #1a2a32;
+                    border-color: #263540;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.6);
                 }
                 .premium-modal-card h3 { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
                 .premium-modal-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px; }

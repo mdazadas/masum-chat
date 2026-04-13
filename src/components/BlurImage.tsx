@@ -10,8 +10,8 @@ interface BlurImageProps {
 }
 
 const BlurImage = ({ src, alt, className = '', style = {}, previewColor }: BlurImageProps) => {
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [error, setError] = useState(false);
+    const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+    const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
     const initials = useMemo(() => getInitials(alt), [alt]);
 
@@ -20,18 +20,29 @@ const BlurImage = ({ src, alt, className = '', style = {}, previewColor }: BlurI
         return getHashColor(alt);
     }, [alt, previewColor]);
 
+    const isLoaded = !!src && loadedSrc === src;
+    const error = !!src && failedSrc === src;
+
     useEffect(() => {
-        if (!src) {
-            setIsLoaded(false);
-            setError(false);
-            return;
-        }
-        setIsLoaded(false);
-        setError(false);
+        if (!src) return;
+
+        let cancelled = false;
         const img = new Image();
         img.src = src;
-        img.onload = () => setIsLoaded(true);
-        img.onerror = () => setError(true);
+
+        img.onload = () => {
+            if (cancelled) return;
+            setLoadedSrc(src);
+        };
+
+        img.onerror = () => {
+            if (cancelled) return;
+            setFailedSrc(src);
+        };
+
+        return () => {
+            cancelled = true;
+        };
     }, [src]);
 
     return (

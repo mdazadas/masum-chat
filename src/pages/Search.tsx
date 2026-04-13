@@ -262,12 +262,12 @@ const Search = () => {
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div className="search-header">
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '12px', padding: '0 8px' }}>
                     <button className="nav-icon-btn ripple" onClick={() => navigate('/home')}>
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="search-input-wrapper">
+                    <div className="search-input-wrapper" style={{ flex: 1 }}>
                         <input
                             type="search"
                             className="premium-search-input"

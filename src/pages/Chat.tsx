@@ -6,7 +6,7 @@ import {
     Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
     Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
     Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
-    Search, Palette, Ban, AlertCircle
+    Search, Palette, Ban, AlertCircle, Download
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useToast } from '../context/ToastContext';
@@ -181,7 +181,8 @@ const SwipeableMessage = memo(({
     const [swipeX, setSwipeX] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
     const [isPressing, setIsPressing] = useState(false);
-    const [mediaLoaded, setMediaLoaded] = useState(false);
+    const [mediaLoaded, setMediaLoaded] = useState(!msg.image || !msg.uploading);
+    // mediaLoaded starts true for already-delivered messages (no upload in progress)
     const touchStartX = useRef(0);
     const swipeThreshold = 60;
 
@@ -255,14 +256,15 @@ const SwipeableMessage = memo(({
                             className={`message-bubble ${msg.sender === 'me' ? 'message-sent' : 'message-received'} ${msg.is_deleted ? 'message-deleted' : ''} ${msg.optimistic ? 'message-pending' : ''}`}
                             onContextMenu={(e) => { e.preventDefault(); onLongPress(msg); }}
                         >
-                            {msg.is_deleted ? (
-                                <div className="deleted-message-content" style={{ opacity: 0.6, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <Trash2 size={12} />
-                                    <span className="deleted-text">This message was deleted</span>
-                                </div>
-                            ) : (
-                                <>
-                                    {msg.replyTo && (
+                            <div className="message-content-wrapper" style={{ display: 'flex', flexDirection: 'column' }}>
+                                {msg.is_deleted ? (
+                                    <div className="deleted-message-content">
+                                        <Trash2 size={12} />
+                                        <span>This message was deleted</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {msg.replyTo && (
                                         <div
                                             className="message-reply-context"
                                             onClick={(e) => {
@@ -279,12 +281,12 @@ const SwipeableMessage = memo(({
                                         </div>
                                     )}
                                     {msg.image && msg.mediaType !== 'audio' && (
-                                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                        <div style={{ margin: '-10px -14px 6px -14px', borderRadius: '8px 8px 0 0', overflow: 'hidden', position: 'relative', minWidth: '240px' }}>
                                             {msg.mediaType === 'video' ? (
                                                 <div
-                                                    className={`video-thumb-wrapper ${(msg.uploading || !mediaLoaded) ? 'skeleton-shimmer media-uploading-structure' : ''}`}
+                                                    className={`video-thumb-wrapper ${msg.uploading ? 'skeleton-shimmer media-uploading-structure' : ''}`}
                                                     onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: 'video' })}
-                                                    style={{ cursor: msg.uploading ? 'default' : 'pointer', position: 'relative', minHeight: '200px' }}
+                                                    style={{ cursor: msg.uploading ? 'default' : 'pointer', position: 'relative' }}
                                                 >
                                                     <video
                                                         src={msg.image}
@@ -294,32 +296,36 @@ const SwipeableMessage = memo(({
                                                         muted
                                                         onLoadedData={() => setMediaLoaded(true)}
                                                         style={{
-                                                            opacity: (msg.uploading || !mediaLoaded) ? 0 : 1,
-                                                            transform: (msg.uploading || !mediaLoaded) ? 'scale(0.95)' : 'scale(1)',
-                                                            transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                                            opacity: msg.uploading ? 0 : 1,
+                                                            transition: 'opacity 0.3s ease',
                                                             pointerEvents: 'none',
                                                             objectFit: 'cover'
                                                         }}
                                                     />
-                                                    {(msg.uploading || !mediaLoaded) && (
+                                                    {msg.uploading && (
                                                         <div className="upload-progress-overlay">
-                                                            <div className="media-placeholder-icon">
-                                                                <Video size={32} color="rgba(255,255,255,0.7)" />
+                                                            <div className="upload-spinner-wrapper">
+                                                                <div className="upload-spinner-ring" />
+                                                                <div className="upload-spinner-icon">
+                                                                    <Video size={20} color="white" />
+                                                                </div>
                                                             </div>
-                                                            <div className="upload-progress-bar">
-                                                                <div className="upload-progress-fill" style={{ width: `${Math.max(msg.uploadProgress || 0, 5)}%` }} />
-                                                            </div>
-                                                            <span className="upload-progress-label">{msg.uploading ? (msg.uploadProgress ? `${msg.uploadProgress}%` : 'Sending...') : 'Loading...'}</span>
+                                                            <span className="upload-progress-label">Sending...</span>
                                                         </div>
                                                     )}
-                                                    {!msg.uploading && mediaLoaded && (
+                                                    {!msg.uploading && (
                                                         <div className="video-play-hint-bubble">
-                                                            <svg viewBox="0 0 24 24" width="28" height="28" fill="white"><path d="M8 5v14l11-7z" /></svg>
+                                                            <svg viewBox="0 0 24 24" width="26" height="26" fill="white"><path d="M8 5v14l11-7z" /></svg>
                                                         </div>
                                                     )}
                                                 </div>
                                             ) : (
-                                                <div style={{ position: 'relative', minHeight: '200px' }} className={(msg.uploading || !mediaLoaded) ? 'media-uploading-structure skeleton-shimmer' : ''}>
+                                                /* Image wrapper — fixed 210px height matching video */
+                                                <div
+                                                    className={msg.uploading ? 'media-uploading-structure skeleton-shimmer' : ''}
+                                                    style={{ position: 'relative', width: '100%', height: '210px', cursor: msg.uploading ? 'default' : 'pointer' }}
+                                                    onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: msg.mediaType || 'image' })}
+                                                >
                                                     <img
                                                         src={msg.image}
                                                         alt="Sent"
@@ -327,23 +333,23 @@ const SwipeableMessage = memo(({
                                                         loading="eager"
                                                         onLoad={() => setMediaLoaded(true)}
                                                         style={{
-                                                            opacity: (msg.uploading || !mediaLoaded) ? 0 : 1,
-                                                            transform: (msg.uploading || !mediaLoaded) ? 'scale(0.95)' : 'scale(1)',
-                                                            transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                                            cursor: msg.uploading ? 'default' : 'pointer',
-                                                            objectFit: 'cover'
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            objectFit: 'cover',
+                                                            display: 'block',
+                                                            opacity: msg.uploading ? 0 : 1,
+                                                            transition: 'opacity 0.3s ease',
                                                         }}
-                                                        onClick={() => !msg.uploading && mediaLoaded && onPreviewImage({ url: msg.image!, type: msg.mediaType || 'image' })}
                                                     />
-                                                    {(msg.uploading || !mediaLoaded) && (
+                                                    {msg.uploading && (
                                                         <div className="upload-progress-overlay">
-                                                            <div className="media-placeholder-icon">
-                                                                <ImageIcon size={32} color="rgba(255,255,255,0.7)" />
+                                                            <div className="upload-spinner-wrapper">
+                                                                <div className="upload-spinner-ring" />
+                                                                <div className="upload-spinner-icon">
+                                                                    <ImageIcon size={20} color="white" />
+                                                                </div>
                                                             </div>
-                                                            <div className="upload-progress-bar">
-                                                                <div className="upload-progress-fill" style={{ width: `${Math.max(msg.uploadProgress || 0, 5)}%` }} />
-                                                            </div>
-                                                            <span className="upload-progress-label">{msg.uploading ? (msg.uploadProgress ? `${msg.uploadProgress}%` : 'Sending...') : 'Loading...'}</span>
+                                                            <span className="upload-progress-label">Sending...</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -355,13 +361,12 @@ const SwipeableMessage = memo(({
                                         <AudioPlayer src={msg.audio} duration={msg.audioDuration} sender={msg.sender} />
                                     )}
 
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        {msg.call_id ? (
+                                    {msg.call_id ? (
                                             <div className="call-message-bubble">
                                                 <div className="call-info-row">
                                                     <div className="call-icon-container" style={{
-                                                        background: msg.text.includes('Missed') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-                                                        color: msg.text.includes('Missed') ? '#ef4444' : '#22c55e'
+                                                        background: msg.text.includes('Missed') ? 'var(--call-missed-bg)' : 'var(--call-active-bg)',
+                                                        color: msg.text.includes('Missed') ? 'var(--error-color)' : 'var(--success-color)'
                                                     }}>
                                                         {msg.text.includes('Video') ? <Video size={18} /> : <Phone size={18} />}
                                                     </div>
@@ -391,19 +396,24 @@ const SwipeableMessage = memo(({
                                                 </button>
                                             </div>
                                         ) : (
-                                            <div className={`message-text ${msg.text === 'This message was deleted' ? 'deleted-text' : ''}`}>
-                                                {msg.text}
-                                            </div>
+                                            msg.text && (
+                                                <div className={`message-text ${msg.image ? 'media-text-container' : ''}`}>
+                                                    {msg.text}
+                                                </div>
+                                            )
                                         )}
-                                        <div className="message-footer">
-                                            <span className="message-time">{msg.time}</span>
-                                            {msg.sender === 'me' && (
+                                    </>
+                                )}
+
+                                <div className="message-footer" style={{ marginTop: msg.is_deleted ? '4px' : '2px' }}>
+                                    <span className="message-time">{msg.time}</span>
+                                    {!msg.is_deleted && msg.sender === 'me' && (
                                                 <span className="status-ticks">
                                                     {msg.status === 'failed' ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                                                             <div title="Failed to send" style={{ display: 'flex', alignItems: 'center' }}>
-                                                                <AlertCircle size={14} color="#ef4444" />
-                                                                <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700, marginLeft: '4px' }}>Failed</span>
+                                                                <AlertCircle size={14} color="var(--error-color)" />
+                                                                <span style={{ fontSize: '10px', color: 'var(--error-color)', fontWeight: 700, marginLeft: '4px' }}>Failed</span>
                                                             </div>
                                                             <div style={{ display: 'flex', gap: '4px' }}>
                                                                 <button
@@ -416,7 +426,7 @@ const SwipeableMessage = memo(({
                                                                 <button
                                                                     className="failed-action-btn"
                                                                     onClick={(e) => { e.stopPropagation(); onDeleteFailed(msg); }}
-                                                                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                                                    style={{ background: 'var(--call-missed-bg)', color: 'var(--error-color)', border: '1px solid var(--call-missed-bg)', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
                                                                 >
                                                                     Delete
                                                                 </button>
@@ -433,10 +443,8 @@ const SwipeableMessage = memo(({
                                                     )}
                                                 </span>
                                             )}
-                                        </div>
-                                    </div>
-                                </>
-                            )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -605,9 +613,10 @@ const Chat = () => {
     const [, forceUpdate] = useState({}); // Dummy state for presence refresh
     const isAtBottomRef = useRef(true); // Sync ref for message handler logic
     const firstUnreadIdRef = useRef<number | null>(null);
-    // Session-persistent unread banner � not reset by DB is_seen updates
+    // Session-persistent unread banner - not reset by DB is_seen updates
     const firstUnreadMessageId = useRef<number | null>(null);
     const initialUnreadCount = useRef<number>(0);
+    const lastIncomingMessageIdRef = useRef<number | null>(null);
 
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [longPressedMsg, setLongPressedMsg] = useState<Message | null>(null);
@@ -632,6 +641,7 @@ const Chat = () => {
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingTimeRef = useRef(0); // Ref for stale-closure-safe duration
     const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+    const messagesRef = useRef<Message[]>(messages);
     const userIdRef = useRef(userId);
     const receiverIdRef = useRef(receiverId);
     const contactsRef = useRef(contacts);
@@ -654,6 +664,7 @@ const Chat = () => {
 
 
     // Sync refs with state
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
     useEffect(() => { userIdRef.current = userId; }, [userId]);
     useEffect(() => { receiverIdRef.current = receiverId; }, [receiverId]);
     useEffect(() => { contactsRef.current = contacts; }, [contacts]);
@@ -813,7 +824,7 @@ const Chat = () => {
             const idx = prev.findIndex(c => c.contact_id === currentReceiverId);
             if (idx === -1) return prev;
 
-            let preview = type === 'video' ? '?? Video' : (type === 'audio' ? '?? Voice message' : '?? Photo');
+            let preview = type === 'video' ? '📹 Video' : (type === 'audio' ? '🎤 Voice message' : '📷 Photo');
 
             const updated = {
                 ...prev[idx],
@@ -953,7 +964,7 @@ const Chat = () => {
                                 .from('blocked_users')
                                 .select('blocker_id,blocked_id')
                                 .or(`and(blocker_id.eq.${userId},blocked_id.eq.${pid}),and(blocker_id.eq.${pid},blocked_id.eq.${userId})`);
-                            
+
                             if (blockRows) {
                                 const iHaveBlocked = (blockRows as any).some((r: any) => r.blocker_id === userId && r.blocked_id === pid);
                                 const theyHaveBlocked = (blockRows as any).some((r: any) => r.blocker_id === pid && r.blocked_id === userId);
@@ -965,7 +976,7 @@ const Chat = () => {
                         }
                     }
 
-                    // Fetch messages � 50 most recent, newest-first
+                    // Fetch messages - 50 most recent, newest-first
                     const msgRes = await insforge.database
                         .from('messages')
                         .select(`
@@ -1003,7 +1014,7 @@ const Chat = () => {
                         }));
 
                         // Find the first unread message from the other person in the
-                        // CHRONOLOGICAL list � capture it now, BEFORE the background
+                        // CHRONOLOGICAL list - capture it now, BEFORE the background
                         // markAsSeen task changes is_seen in the DB.
                         const firstUnread = mapped.find(
                             m => m.sender === 'other' && m.status !== 'read'
@@ -1293,7 +1304,7 @@ const Chat = () => {
                     chatContainer.classList.add('keyboard-active');
 
                     // Only scroll on keyboard open if user is already at bottom
-                    if (isAtBottom) setTimeout(scrollToBottom, 50);
+                    if (isAtBottomRef.current) setTimeout(scrollToBottom, 50);
                 } else {
                     document.body.style.overflow = '';
                     chatContainer.classList.remove('keyboard-active');
@@ -1312,14 +1323,14 @@ const Chat = () => {
 
             // Also mark as seen on focus
             if (receiverIdRef.current) {
-                const unseenIds = messages.filter(m => m.sender === 'other' && m.status !== 'read').map(m => m.id);
+                const unseenIds = messagesRef.current.filter(m => m.sender === 'other' && m.status !== 'read').map(m => m.id);
                 if (unseenIds.length > 0) {
                     (async () => {
                         try {
                             const { data: sessionData } = await insforge.auth.getCurrentSession();
                             const expiresAt = (sessionData?.session as any)?.expires_at || (sessionData?.session as any)?.expiresAt;
                             if (!sessionData?.session || (expiresAt && (expiresAt * 1000) < Date.now() + 5000)) return;
-                            
+
                             await insforge.database
                                 .from('messages')
                                 .update({ is_seen: true })
@@ -1347,44 +1358,7 @@ const Chat = () => {
                 window.visualViewport.removeEventListener('scroll', handleViewportChange);
             }
         };
-    }, [username, showToast, userId, receiverId, scrollToBottom, messages]);
-
-    // Smoothly handle keyboard appearance reducing the viewport height
-    useEffect(() => {
-        const handleViewportChange = () => {
-            const vh = window.innerHeight * 0.01;
-            document.documentElement.style.setProperty('--vh', `${vh}px`);
-
-            // Check if keyboard is likely active (height drastically reduced)
-            const isKeyboardOpen = window.innerHeight < window.screen.height * 0.75;
-            if (isKeyboardOpen) {
-                // Ensure chat container doesn't get pushed under keyboard
-                document.body.classList.add('keyboard-active');
-                setTimeout(() => scrollToBottom('auto'), 100);
-            } else {
-                document.body.classList.remove('keyboard-active');
-            }
-        };
-
-        // Initial set
-        handleViewportChange();
-
-        // Listen for standard resize
-        window.addEventListener('resize', handleViewportChange);
-
-        // Listen to VisualViewport for exact keyboard geometry on modern mobile browsers
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', handleViewportChange);
-        }
-
-        return () => {
-            window.removeEventListener('resize', handleViewportChange);
-            if (window.visualViewport) {
-                window.visualViewport.removeEventListener('resize', handleViewportChange);
-            }
-            document.body.classList.remove('keyboard-active');
-        };
-    }, [scrollToBottom]);
+    }, [uploadAndSendMedia, scrollToBottom]);
 
     const handleGalleryClick = () => {
         galleryInputRef.current?.click();
@@ -1443,7 +1417,7 @@ const Chat = () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
                 if (shouldSendAudio.current) {
-                    // Use ref (not state) to avoid stale closure � state may be 0 inside here
+                    // Use ref (not state) to avoid stale closure - state may be 0 inside here
                     const duration = formatTime(recordingTimeRef.current);
                     // Unified flow handles storage + DB
                     await uploadAndSendMedia(audioBlob, 'audio', duration);
@@ -1563,7 +1537,7 @@ const Chat = () => {
 
         // Optimistic contact preview update
         setContacts((prev: any[]) => {
-            const idx = prev.findIndex(c => c.contact_id === receiverId);
+            const idx = prev.findIndex(c => c.contact_id === currentReceiverId);
             if (idx === -1) return prev;
             const updated = {
                 ...prev[idx],
@@ -1628,7 +1602,11 @@ const Chat = () => {
         } catch (error: any) {
             console.error('handleSendMessage error:', error);
             showToast('Failed to send message', 'error');
-            setMessages(prev => prev.filter(m => m.id !== tempId));
+            setMessages(prev => prev.map(m =>
+                (m.id === tempId || m.clientId === tempId)
+                    ? { ...m, status: 'failed', optimistic: false }
+                    : m
+            ));
         }
     };
 
@@ -1647,44 +1625,76 @@ const Chat = () => {
                 throw new Error('Session expired');
             }
 
-            const publishPayload = {
+            const payload = {
                 sender_id: currentUserId,
                 receiver_id: currentReceiverId,
                 text: msg.text,
-                clientId: msg.clientId || msg.id
+                is_seen: false,
+                reply_to: msg.replyTo?.id || null
             };
 
-            const { error } = await insforge.database
+            const { data, error } = await insforge.database
                 .from('messages')
-                .insert([publishPayload])
-                .select()
+                .insert([payload])
+                .select('id')
                 .single();
 
             if (error) throw error;
 
-            // Database insert success - real-time will handle the rest
+            const publishPayload = {
+                id: data?.id || (msg.clientId || msg.id),
+                clientId: msg.clientId || msg.id,
+                sender_id: currentUserId,
+                receiver_id: currentReceiverId,
+                text: msg.text,
+                image_url: null,
+                is_seen: false,
+                reply_to: msg.replyTo?.id || null,
+                created_at: new Date().toISOString()
+            };
+
+            Promise.resolve(insforge.realtime.publish(`chat:${currentReceiverId}`, 'INSERT_message', publishPayload)).catch(() => { });
+            Promise.resolve(insforge.realtime.publish(`chat:${currentUserId}`, 'INSERT_message', publishPayload)).catch(() => { });
         } catch (error) {
             console.error('Retry failed:', error);
             setMessages(prev => prev.map(m => (m.clientId === msg.clientId || m.id === msg.id) ? { ...m, status: 'failed', optimistic: false } : m));
         }
     };
 
+    useEffect(() => {
+        if (!messages.length) return;
+
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg || lastMsg.sender !== 'other') return;
+
+        if (lastIncomingMessageIdRef.current === (lastMsg.id as number)) return;
+        lastIncomingMessageIdRef.current = lastMsg.id as number;
+
+        if (!isAtBottomRef.current) {
+            setUnreadCount(prev => prev + 1);
+            setBadgeText('New messages');
+            if (!firstUnreadIdRef.current) {
+                firstUnreadIdRef.current = lastMsg.id as number;
+            }
+        }
+    }, [messages]);
+
     const handleDeleteFailedMessage = (msg: Message) => {
         setMessages(prev => prev.filter(m => (m.clientId !== msg.clientId && m.id !== msg.id)));
     };
 
-    // Auto-retry logic: Check for failed messages every 20 seconds and retry them
+    // Auto-retry logic: stable interval using ref (prevents interval recreation on every message change)
     useEffect(() => {
         const timer = setInterval(() => {
-            const failedMessages = messages.filter(m => m.status === 'failed' && m.sender === 'me');
+            const failedMessages = messagesRef.current.filter(m => m.status === 'failed' && m.sender === 'me');
             if (failedMessages.length > 0) {
                 console.log(`Auto-retrying ${failedMessages.length} failed messages...`);
                 failedMessages.forEach(handleRetryMessage);
             }
-        }, 20000); // 20 seconds interval
+        }, 20000);
 
         return () => clearInterval(timer);
-    }, [messages]);
+    }, []);
 
     const deleteMessage = async (forEveryone: boolean) => {
         if (!longPressedMsg) return;
@@ -1940,7 +1950,7 @@ const Chat = () => {
             >
 
                 <div className="system-message-badge">
-                    ?? Messages are end-to-end encrypted. No one outside of this chat, not even Masum Chats, can read or listen to them.
+                    🔒 Messages are end-to-end encrypted. No one outside of this chat, not even Masum Chats, can read or listen to them.
                 </div>
                 {hasMore && (
                     <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -2366,7 +2376,7 @@ const Chat = () => {
                                     handleDownload(previewMedia.url, `masum-media-${Date.now()}.${previewMedia.type === 'video' ? 'mp4' : 'jpg'}`);
                                 }}
                             >
-                                ? Download
+                                <Download size={15} /> Download
                             </button>
                         </div>
                         <div className="media-preview-container">
@@ -2376,16 +2386,18 @@ const Chat = () => {
                                 <TransformWrapper
                                     initialScale={1}
                                     minScale={0.5}
-                                    maxScale={4}
+                                    maxScale={6}
                                     centerOnInit
                                 >
-                                    <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                                    <TransformComponent
+                                        wrapperStyle={{ width: '100dvw', height: '100dvh' }}
+                                        contentStyle={{ width: '100dvw', height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
                                         <img
                                             src={previewMedia.url}
                                             alt="Preview"
                                             className="media-preview-img-zoomable"
                                             onClick={(e) => e.stopPropagation()}
-                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                         />
                                     </TransformComponent>
                                 </TransformWrapper>
@@ -2477,4 +2489,6 @@ const Chat = () => {
 };
 
 export default Chat;
+
+
 

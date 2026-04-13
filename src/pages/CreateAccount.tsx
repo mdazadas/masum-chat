@@ -4,6 +4,7 @@ import { UserPlus, CheckCircle2, Eye, EyeOff, MessageCircle } from 'lucide-react
 import { useToast } from '../context/ToastContext';
 import { useData } from '../context/DataContext';
 import { insforge } from '../lib/insforge';
+import { clearAppAuthStorage } from '../lib/authStorage';
 
 const CreateAccount = () => {
     const navigate = useNavigate();
@@ -136,23 +137,9 @@ const CreateAccount = () => {
             showToast('Password must be at least 6 characters.', 'error');
             return;
         }
+
         setLoading(true);
         try {
-            // Check if email already exists in profiles
-            const { data: existingEmail, error: emailCheckError } = await insforge.database
-                .from('profiles')
-                .select('id')
-                .eq('email', email.toLowerCase().trim())
-                .maybeSingle();
-
-            if (emailCheckError && emailCheckError.code !== 'PGRST116') throw emailCheckError;
-
-            if (existingEmail) {
-                showToast('This email is already associated with an account.', 'error');
-                setLoading(false);
-                return;
-            }
-
             const { data, error } = await insforge.auth.signUp({
                 email,
                 password,
@@ -194,7 +181,7 @@ const CreateAccount = () => {
             setLoading(true);
             const { error } = await insforge.auth.signInWithOAuth({
                 provider,
-                redirectTo: window.location.origin + '/home'
+                redirectTo: window.location.origin + '/login'
             });
             if (error) throw error;
         } catch (err: any) {
@@ -237,6 +224,9 @@ const CreateAccount = () => {
             }
         } catch (error: any) {
             console.error("Verification error:", error);
+            if (error?.status === 401 || error?.status === 403) {
+                clearAppAuthStorage();
+            }
             showToast(error?.message || 'Verification failed. Please try again.', 'error');
         } finally {
             setLoading(false);
@@ -392,23 +382,23 @@ const CreateAccount = () => {
                         </div>
 
                         <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-                            <button 
+                            <button
                                 type="button"
-                                className="landing-btn-secondary" 
+                                className="landing-btn-secondary"
                                 onClick={() => handleOAuth('google')}
                                 disabled={loading}
                                 style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
                             >
                                 <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
                             </button>
-                            <button 
+                            <button
                                 type="button"
-                                className="landing-btn-secondary" 
+                                className="landing-btn-secondary"
                                 onClick={() => handleOAuth('github')}
                                 disabled={loading}
                                 style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
                             >
-                                <img src="https://github.com/favicon.ico" alt="GitHub" style={{ width: '18px', height: '18px', filter: 'brightness(0)' }} />
+                                <img src="https://github.com/favicon.ico" alt="GitHub" className="github-auth-icon" style={{ width: '18px', height: '18px' }} />
                             </button>
                         </div>
                     </form>

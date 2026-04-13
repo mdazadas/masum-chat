@@ -4,6 +4,7 @@ import { LogIn, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { useData } from '../context/DataContext';
 import { insforge } from '../lib/insforge';
+import { clearAppAuthStorage, hasOAuthCallbackParams } from '../lib/authStorage';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -19,38 +20,54 @@ const Login = () => {
   const isPasswordValid = password.length >= 6;
   const isFormValid = isEmailValid && isPasswordValid;
 
+  const completeLogin = (id: string, fromOAuthCallback = false) => {
+    setUserId(id);
+    if (fromOAuthCallback) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    navigate('/home', { replace: true });
+  };
+
   // Auto-redirect if already logged in (InsForge native)
   useEffect(() => {
     const checkSession = async () => {
       try {
-        // Silently check session only if key exists
+        const params = new URLSearchParams(window.location.search);
+        const oauthError = params.get('error_description') || params.get('error');
+        if (oauthError) {
+          showToast(decodeURIComponent(oauthError), 'error');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+
+        // Silently check session only if key exists or this is OAuth callback
         const hasSession = sessionStorage.getItem('insforge_session') || localStorage.getItem('insforge_session');
-        if (!hasSession) return;
+        const isOAuthCallback = hasOAuthCallbackParams();
+        if (!hasSession && !isOAuthCallback) return;
 
         // Try-catch specifically for the SDK call to suppress 401 console logs where possible
         const { data, error } = await insforge.auth.getCurrentSession().catch(() => ({ data: null, error: true }));
-        
+
         if (error) {
           // Silent cleanup only if error is definitive
-          localStorage.removeItem('insforge_session');
-          sessionStorage.removeItem('insforge_session');
+          clearAppAuthStorage();
           return;
         }
 
         if (data?.session) {
-          navigate('/home', { replace: true });
+          completeLogin(data.session.user.id, isOAuthCallback);
         }
       } catch (err) { }
     };
     checkSession();
-  }, [navigate]);
+  }, [navigate, showToast]);
 
   const handleOAuth = async (provider: 'google' | 'github') => {
     try {
       setLoading(true);
       const { error } = await insforge.auth.signInWithOAuth({
         provider,
-        redirectTo: window.location.origin + '/home'
+        redirectTo: window.location.origin + '/login'
       });
       if (error) throw error;
     } catch (err: any) {
@@ -73,13 +90,9 @@ const Login = () => {
 
       if (error) throw error;
 
-      if (data?.accessToken && data?.user) {
+      if (data?.user) {
         showToast('Welcome back to Masum Chat!', 'success');
-
-        // Immediately update local auth state
-        setUserId(data.user.id);
-        
-        navigate('/home', { replace: true });
+        completeLogin(data.user.id);
       }
     } catch (err: any) {
       console.error("Login error:", err);
@@ -167,23 +180,23 @@ const Login = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-          <button 
+          <button
             type="button"
-            className="landing-btn-secondary" 
+            className="landing-btn-secondary"
             onClick={() => handleOAuth('google')}
             disabled={loading}
             style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
           >
-              <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
+            <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
           </button>
-          <button 
+          <button
             type="button"
-            className="landing-btn-secondary" 
+            className="landing-btn-secondary"
             onClick={() => handleOAuth('github')}
             disabled={loading}
             style={{ flex: 1, padding: '12px', borderRadius: '14px', border: '1px solid var(--border-color)', background: 'var(--surface-color)', cursor: 'pointer' }}
           >
-              <img src="https://github.com/favicon.ico" alt="GitHub" style={{ width: '18px', height: '18px', filter: 'brightness(0)' }} />
+            <img src="https://github.com/favicon.ico" alt="GitHub" className="github-auth-icon" style={{ width: '18px', height: '18px' }} />
           </button>
         </div>
 

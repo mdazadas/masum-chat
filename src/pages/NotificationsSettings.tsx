@@ -84,7 +84,7 @@ const NotificationsSettings = () => {
             react_notifications: true,
             preview_messages: true,
             vibration: true,
-            in_app_sound: true,
+            in_app_sound: false,
             high_priority_notifications: true,
             notification_sound: 'Masum Default'
         };
@@ -159,14 +159,14 @@ const NotificationsSettings = () => {
                 }
                 .privacy-toggle-divider {
                     height: 1px;
-                    background: rgba(0,0,0,0.05);
+                    background: var(--border-color);
                     margin: 0 20px;
                 }
                 .premium-switch {
                     width: 48px;
                     height: 26px;
                     border-radius: 100px;
-                    background: #e2e8f0;
+                    background: var(--border-color);
                     position: relative;
                     border: none;
                     cursor: pointer;
@@ -209,7 +209,7 @@ const NotificationsSettings = () => {
                     transition: all 0.2s;
                     text-align: left;
                 }
-                .sound-option-item:hover { background: rgba(0,0,0,0.02); }
+                .sound-option-item:hover { background: var(--secondary-color); }
                 .sound-option-item.active { background: var(--secondary-color); }
                 .radio-circle {
                     width: 20px;
@@ -240,8 +240,8 @@ const NotificationsSettings = () => {
                     gap: 10px;
                     padding: 12px 24px;
                     border-radius: 100px;
-                    border: 1.5px solid #edf2f7;
-                    background: white;
+                    border: 1.5px solid var(--border-color);
+                    background: var(--surface-color);
                     color: #e53e3e;
                     font-weight: 700;
                     font-size: 14px;
@@ -252,12 +252,12 @@ const NotificationsSettings = () => {
                 .reset-btn:active { transform: scale(0.96); }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', height: '100%', width: '100%', gap: '16px', padding: '0 16px' }}>
-                    <button className="nav-icon-btn ripple" onClick={handleBack} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={handleBack}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title" style={{ margin: 0, fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 800 }}>Notifications</span>
+                    <h2 className="screen-header-title">Notifications</h2>
                 </div>
             </div>
 
@@ -341,7 +341,7 @@ const NotificationsSettings = () => {
                                         {settings?.notification_sound || 'Masum Default'}
                                     </div>
                                 </div>
-                                <ChevronRight size={18} color="rgba(0,0,0,0.2)" />
+                                <ChevronRight size={18} color="var(--text-secondary)" />
                             </div>
                             <div className="privacy-toggle-divider" />
                             <div className="privacy-toggle-item">

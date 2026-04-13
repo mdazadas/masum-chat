@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Send, MessageSquare, AlertCircle, Sparkles, Coffee } from 'lucide-react';
 import { insforge } from '../lib/insforge';
@@ -15,6 +15,13 @@ interface FeedbackMessage {
     user_id?: string;
 }
 
+interface UserProfile {
+    id: string;
+    name?: string;
+}
+
+type SupportFeedbackEventPayload = FeedbackMessage;
+
 const Support = () => {
     const navigate = useNavigate();
     const userId = useCurrentUserId();
@@ -27,16 +34,47 @@ const Support = () => {
     const [messageText, setMessageText] = useState('');
     const [inputName, setInputName] = useState('');
     const [inputEmail, setInputEmail] = useState('');
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<UserProfile | null>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const fetchProfile = useCallback(async () => {
+        if (!userId) return;
+        const { data } = await insforge.database
+            .from('profiles')
+            .select('id,name')
+            .eq('id', userId)
+            .single();
+        if (data) setProfile(data as UserProfile);
+    }, [userId]);
+
+    const fetchFeedback = useCallback(async () => {
+        try {
+            // Only fetch messages less than 24 hours old
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+            const { data, error } = await insforge.database
+                .from('support_feedback')
+                .select('*')
+                .gte('created_at', oneDayAgo)
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (error) throw error;
+            if (data) setMessages(data as FeedbackMessage[]);
+        } catch (err) {
+            console.error('Fetch feedback error:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         window.scrollTo(0, 0); // Force scroll to top on mount
         fetchProfile();
         fetchFeedback();
 
-        const handleNewFeedback = (payload: any) => {
+        const handleNewFeedback = (payload: SupportFeedbackEventPayload) => {
             const newMsg = payload as FeedbackMessage;
             setMessages(prev => {
                 if (prev.some(m => m.id === newMsg.id)) return prev;
@@ -63,7 +101,7 @@ const Support = () => {
             insforge.realtime.off('INSERT_support_feedback', handleNewFeedback);
             insforge.realtime.unsubscribe('support_feedback:global');
         };
-    }, []);
+    }, [fetchProfile, fetchFeedback]);
 
     // Filter out expired messages constantly
     useEffect(() => {
@@ -81,37 +119,6 @@ const Support = () => {
             setInputName(profile.name);
         }
     }, [profile]);
-
-    const fetchProfile = async () => {
-        if (!userId) return;
-        const { data } = await insforge.database
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-        if (data) setProfile(data);
-    };
-
-    const fetchFeedback = async () => {
-        try {
-            // Only fetch messages less than 24 hours old
-            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-            const { data, error } = await insforge.database
-                .from('support_feedback')
-                .select('*')
-                .gte('created_at', oneDayAgo)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (error) throw error;
-            if (data) setMessages(data);
-        } catch (err) {
-            console.error('Fetch feedback error:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -172,8 +179,9 @@ const Support = () => {
             }
 
             // Keep name and email populated
-        } catch (err: any) {
-            showToast(err.message || 'Failed to send feedback', 'error');
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to send feedback';
+            showToast(errorMessage, 'error');
             // Revert optimistic insert on failure
             setMessages(prev => prev.filter(m => m.id !== optimisticId));
         } finally {
@@ -201,12 +209,14 @@ const Support = () => {
     return (
         <div className="support-page-container">
             {/* Header */}
-            <header className="support-header">
-                <button className="back-btn" onClick={() => navigate(-1)}>
-                    <ArrowLeft size={24} />
-                </button>
-                <h1>Help & Support</h1>
-            </header>
+            <div className="screen-header" style={{ position: 'fixed', top: 0, left: 0, right: 0, width: '100%' }}>
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
+                    <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
+                        <ArrowLeft size={24} />
+                    </button>
+                    <h2 className="screen-header-title">Help &amp; Support</h2>
+                </div>
+            </div>
 
             <main className="support-content scroll-container">
                 {/* Donation Card */}
@@ -219,8 +229,8 @@ const Support = () => {
 
                     <div className="qr-container">
                         <img src="/donation_qr.jpg" alt="Donation QR Code" className="qr-image" />
-                        <div 
-                            className="upi-id" 
+                        <div
+                            className="upi-id"
                             onClick={handleCopyUPI}
                             title="Click to copy"
                         >
@@ -782,33 +792,31 @@ const Support = () => {
 
 // Helper component for live 24h countdown
 const CountdownTimer = ({ createdAt }: { createdAt: string }) => {
-    const [timeLeft, setTimeLeft] = useState('');
+    const calculateTimeLeft = useCallback(() => {
+        const createdTime = new Date(createdAt).getTime();
+        const expiryTime = createdTime + 24 * 60 * 60 * 1000;
+        const now = new Date().getTime();
+        const difference = expiryTime - now;
+
+        if (difference <= 0) {
+            return 'Expired';
+        }
+
+        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+
+        return `${hours}h ${minutes}m left`;
+    }, [createdAt]);
+
+    const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft());
 
     useEffect(() => {
-        const calculateTimeLeft = () => {
-            const createdTime = new Date(createdAt).getTime();
-            const expiryTime = createdTime + 24 * 60 * 60 * 1000;
-            const now = new Date().getTime();
-            const difference = expiryTime - now;
-
-            if (difference <= 0) {
-                return 'Expired';
-            }
-
-            const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-
-            return `${hours}h ${minutes}m left`;
-        };
-
-        setTimeLeft(calculateTimeLeft());
-
         const timer = setInterval(() => {
             setTimeLeft(calculateTimeLeft());
         }, 60000); // Update every minute
 
         return () => clearInterval(timer);
-    }, [createdAt]);
+    }, [calculateTimeLeft]);
 
     if (timeLeft === 'Expired') return null;
 

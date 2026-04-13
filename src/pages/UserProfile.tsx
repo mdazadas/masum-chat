@@ -253,7 +253,7 @@ const UserProfile = () => {
     }
 
     return (
-        <div className="profile-container w-full h-[100dvh] bg-surface-color flex flex-col relative overflow-hidden text-text-primary mx-auto max-w-md">
+        <div className="profile-container premium-bg" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <style>{`
                 .profile-header-card {
                     padding: 32px 24px 24px;
@@ -320,11 +320,16 @@ const UserProfile = () => {
                     background: var(--surface-color);
                     border-radius: 20px;
                     border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
                     padding: 20px;
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
+                }
+                [data-theme='dark'] .premium-field-card {
+                    background: #1a2a32;
+                    border-color: #263540;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
                 }
                 .field-header {
                     display: flex;
@@ -358,7 +363,12 @@ const UserProfile = () => {
                     background: var(--surface-color);
                     border-radius: 20px;
                     border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+                }
+                [data-theme='dark'] .media-card {
+                    background: #1a2a32;
+                    border-color: #263540;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
                 }
                 .danger-section {
                     margin-top: 16px;
@@ -406,12 +416,12 @@ const UserProfile = () => {
                 }
             `}</style>
 
-            <div className="profile-nav glass-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px' }}>
+            <div className="screen-header">
+                <div className="max-w-content" style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '16px' }}>
                     <button className="nav-icon-btn ripple" onClick={() => navigate(-1)}>
                         <ArrowLeft size={24} />
                     </button>
-                    <span className="profile-nav-title">Contact Information</span>
+                    <h2 className="screen-header-title white-text">Contact Information</h2>
                 </div>
             </div>
 
