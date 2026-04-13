@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Shield, ArrowLeft, ChevronLeft, Chrome, MoreVertical, EyeOff, Smartphone, AlertTriangle } from 'lucide-react';
+import { Shield, ArrowLeft, Chrome, MoreVertical, EyeOff, Smartphone, AlertTriangle } from 'lucide-react';
 
 const SafetyGuide = () => {
     const navigate = useNavigate();

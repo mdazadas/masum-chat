@@ -4,7 +4,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
     ArrowLeft, Phone, Video, Check, CheckCheck, MoreVertical,
     Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
-    Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
+    Reply, RefreshCcw, ImagePlay, FileText, Clock,
     Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
     Search, Palette, Ban, AlertCircle, Download
 } from 'lucide-react';
@@ -181,7 +181,6 @@ const SwipeableMessage = memo(({
     const [swipeX, setSwipeX] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
     const [isPressing, setIsPressing] = useState(false);
-    const [mediaLoaded, setMediaLoaded] = useState(!msg.image || !msg.uploading);
     // mediaLoaded starts true for already-delivered messages (no upload in progress)
     const touchStartX = useRef(0);
     const swipeThreshold = 60;
