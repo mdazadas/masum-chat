@@ -1,73 +1,53 @@
-# React + TypeScript + Vite
+# 🌟 Masum Chat - Premium Messaging Experience
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Masum Chat is a high-performance, real-time messaging application built with a focus on privacy, aesthetics, and seamless user experience. Featuring a stunning glassmorphic UI and robust real-time capabilities.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **🌈 Premium UI/UX**: Custom glassmorphic design system with vibrant gradients and smooth micro-animations.
+- **⚡ Real-time Messaging**: Instant message delivery and read receipts powered by WebSockets.
+- **🔐 Secure Authentication**: Multi-method sign-in including Email/OTP and one-click social login (Google & GitHub).
+- **🎭 Dynamic Identity**: Automatic unique username generation for social sign-ins (e.g., `user_1234`).
+- **🔇 Privacy First**: Stealth notification modes and industry-standard silent-by-default audio settings.
+- **📸 Media Support**: Seamless photo and video sharing with premium media players.
+- **📞 Call Integration**: High-quality audio and video calling interface.
+- **🌓 Adaptive Themes**: Fluid transitions between Light and Dark modes.
 
-## React Compiler
+## 🚀 Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Vanilla CSS with modern variables & Backdrop filters
+- **Backend-as-a-Service**: InsForge (PostgreSQL, Auth, Realtime, Storage)
+- **Icons**: Lucide React
+- **Hosting**: Optimized for Vercel/InsForge Hosting
 
-## Expanding the ESLint configuration
+## 🛠️ Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/mdazadas/masum-chat.git
+   ```
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+3. **Configure Environment**:
+   Create a `.env` file based on `env.example`:
+   ```env
+   VITE_INSFORGE_URL=your_project_url
+   VITE_INSFORGE_ANON_KEY=your_anon_key
+   ```
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+4. **Launch Development Server**:
+   ```bash
+   npm run dev
+   ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 📸 Preview
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x';
-import reactDom from 'eslint-plugin-react-dom';
+*The application features a mobile-first, responsive design that looks stunning on all devices.*
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+---
+Developed with ❤️ for Masum Chat Users.
