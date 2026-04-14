@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, memo, useLayoutEffect 
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
-    ArrowLeft, MoreVertical, Phone, Video, Send, Smile, Paperclip, Mic, X, Reply, Trash2, Copy, Check, CheckCheck, Play, Pause, Download, Volume2, Camera, Image as ImageIcon, FileText, User, ImagePlay, Plus,
+    ArrowLeft, MoreVertical, Phone, Video, Send, Paperclip, Mic, X, Reply, Trash2, Copy, Check, CheckCheck, Play, Pause, Download, Camera, Image as ImageIcon, FileText, User, ImagePlay, Plus,
     RefreshCcw, Clock, PhoneIncoming, PhoneOutgoing, PhoneMissed,
     Search, Palette, Ban, AlertCircle, Info, CornerUpRight
 } from 'lucide-react';
@@ -27,6 +27,7 @@ interface Message {
     is_deleted?: boolean;
     image?: string | null;
     audio?: string | null; // Added audio support
+    video?: string | null; // Added video support
     audioDuration?: string;
     mediaType?: 'image' | 'video' | 'audio';
     uploading?: boolean;
@@ -41,6 +42,9 @@ interface Message {
         text: string;
         username: string;
         mediaType?: 'image' | 'video' | 'audio';
+        image?: string | null;
+        video?: string | null;
+        audio?: string | null;
     } | null;
     created_at?: string;
     read_at?: string | null;
