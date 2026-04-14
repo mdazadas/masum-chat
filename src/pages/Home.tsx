@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2, Check, CheckCheck, Heart } from 'lucide-react';
+import { Search as SearchIcon, MessageSquare, Image as ImageIcon, Video, Pin, PinOff, Bell, BellOff, Trash2, Check, CheckCheck, Heart, Mic } from 'lucide-react';
 import BottomNav from '../components/BottomNav';
 import { insforge } from '../lib/insforge';
 import { useCurrentUserId } from '../hooks/useCurrentUser';
@@ -69,10 +69,23 @@ const Home = () => {
         }
     };
 
-    const handleEndLongPress = () => {
+    const handleEndLongPress = (e?: React.MouseEvent | React.TouchEvent) => {
         if (longPressTimer.current) {
             clearTimeout(longPressTimer.current);
             longPressTimer.current = null;
+        }
+        
+        if (isLongPress.current) {
+            // It was a long press, prevent the synthetic click!
+            if (e && e.cancelable) {
+                e.preventDefault();
+            }
+            // Reset slightly later so inline click handlers don't immediately trigger
+            setTimeout(() => {
+                isLongPress.current = false;
+            }, 100);
+        } else {
+            isLongPress.current = false;
         }
     };
 
@@ -174,6 +187,7 @@ const Home = () => {
         if (!preview) return null;
         if (preview.includes('📷')) return <ImageIcon size={14} className="message-status-icon" />;
         if (preview.includes('📹')) return <Video size={14} className="message-status-icon" />;
+        if (preview.includes('🎤')) return <Mic size={14} className="message-status-icon" />;
         return null;
     };
 
@@ -232,7 +246,7 @@ const Home = () => {
                             padding: '12px 16px 12px 44px',
                             borderRadius: '24px',
                             border: '1px solid var(--border-color)',
-                            backgroundColor: 'var(--secondary-color)',
+                            backgroundColor: 'var(--input-bg)',
                             fontSize: '15px',
                             color: 'var(--text-primary)',
                             outline: 'none',
@@ -266,16 +280,18 @@ const Home = () => {
                                 key={chat.id || `${chat.contact_id}-${idx}`}
                                 className="chat-item"
                                 onClick={() => {
-                                    if (!isLongPress.current && !selectedChat) {
+                                    if (!isLongPress.current && !isActionSheetOpen) {
                                         navigate(`/chat/${chat.username}`, { state: { profile: chat } });
                                     }
+                                    // Reset after click so next tap works
+                                    isLongPress.current = false;
                                 }}
                                 onMouseDown={(e) => handleStartLongPress(chat, e)}
-                                onMouseUp={handleEndLongPress}
-                                onMouseLeave={handleEndLongPress}
+                                onMouseUp={(e) => handleEndLongPress(e)}
+                                onMouseLeave={(e) => handleEndLongPress(e)}
                                 onMouseMove={handleMove}
                                 onTouchStart={(e) => handleStartLongPress(chat, e)}
-                                onTouchEnd={handleEndLongPress}
+                                onTouchEnd={(e) => handleEndLongPress(e)}
                                 onTouchMove={handleMove}
                                 style={{
                                     backgroundColor: selectedChat?.contact_id === chat.contact_id ? 'var(--primary-light)' : 'transparent',
@@ -334,7 +350,7 @@ const Home = () => {
                                                         overflow: 'hidden',
                                                         textOverflow: 'ellipsis'
                                                     }}>
-                                                        {chat.preview}
+                                                        {(chat.preview || '').replace(/📷 |📹 |🎤 /g, '').trim()}
                                                     </span>
                                                 </>
                                             )}
@@ -480,6 +496,15 @@ const Home = () => {
                     align-items: center;
                     justify-content: center;
                     color: var(--text-primary);
+                }
+                .home-status-ticks .tick-sent,
+                .home-status-ticks .tick-delivered {
+                    color: var(--text-secondary);
+                    opacity: 1;
+                }
+                .home-status-ticks .tick-blue {
+                    color: var(--tick-read);
+                    opacity: 1;
                 }
                 .action-item {
                     display: flex;

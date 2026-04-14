@@ -113,7 +113,9 @@ const Settings = () => {
                 }
                 .settings-card {
                     overflow: hidden;
-                    margin: 0 16px;
+                    margin: 0;
+                    border-left: none;
+                    border-right: none;
                 }
                 .logout-btn-premium {
                     margin: 24px auto 12px;
@@ -187,7 +189,7 @@ const Settings = () => {
                     {/* Profile Preview Card */}
                     <div
                         className="profile-glass-card ripple"
-                        style={{ margin: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}
+                        style={{ margin: '0 0 24px 0', padding: '16px 20px', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}
                         onClick={() => navigate('/profile/me')}
                     >
                         <div style={{ position: 'relative', flexShrink: 0 }}>

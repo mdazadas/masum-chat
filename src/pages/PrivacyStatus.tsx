@@ -189,7 +189,9 @@ const PrivacyStatus = () => {
                 }
                 .settings-card {
                     overflow: hidden;
-                    margin: 0 16px;
+                    margin: 0;
+                    border-left: none;
+                    border-right: none;
                 }
                 .privacy-toggle-item {
                     padding: 16px 20px;

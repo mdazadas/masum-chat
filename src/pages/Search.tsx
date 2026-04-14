@@ -69,9 +69,8 @@ const Search = () => {
                     width: 100%;
                     padding: 12px 16px 12px 42px;
                     border-radius: 16px;
-                    border: 1px solid rgba(255, 255, 255, 0.3);
-                    background: rgba(255, 255, 255, 0.6);
-                    backdrop-filter: blur(10px);
+                    border: 1px solid var(--border-color);
+                    background: var(--input-bg);
                     color: var(--text-primary);
                     font-size: 15px;
                     font-weight: 500;
@@ -79,9 +78,9 @@ const Search = () => {
                     outline: none;
                 }
                 .premium-search-input:focus {
-                    background: white;
+                    background: var(--surface-color);
                     border-color: var(--primary-color);
-                    box-shadow: 0 4px 12px rgba(0, 168, 132, 0.1);
+                    box-shadow: 0 4px 12px var(--primary-glow, rgba(0, 168, 132, 0.1));
                 }
                 .search-icon-fixed {
                     position: absolute;

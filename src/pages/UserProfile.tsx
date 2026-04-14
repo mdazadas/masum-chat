@@ -317,19 +317,20 @@ const UserProfile = () => {
                     gap: 16px;
                 }
                 .premium-field-card {
-                    background: var(--surface-color);
-                    border-radius: 20px;
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
-                    padding: 20px;
+                    background: transparent;
+                    border-radius: 0;
+                    border: none;
+                    border-bottom: 1px solid var(--border-color);
+                    box-shadow: none;
+                    padding: 16px 20px;
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
                 }
                 [data-theme='dark'] .premium-field-card {
-                    background: #1a2a32;
-                    border-color: #263540;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+                    background: transparent;
+                    border-color: var(--border-color);
+                    box-shadow: none;
                 }
                 .field-header {
                     display: flex;
@@ -358,17 +359,18 @@ const UserProfile = () => {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
-                    padding: 20px;
+                    padding: 16px 20px;
                     cursor: pointer;
-                    background: var(--surface-color);
-                    border-radius: 20px;
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+                    background: transparent;
+                    border-radius: 0;
+                    border: none;
+                    border-bottom: 1px solid var(--border-color);
+                    box-shadow: none;
                 }
                 [data-theme='dark'] .media-card {
-                    background: #1a2a32;
-                    border-color: #263540;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+                    background: transparent;
+                    border-color: var(--border-color);
+                    box-shadow: none;
                 }
                 .danger-section {
                     margin-top: 16px;

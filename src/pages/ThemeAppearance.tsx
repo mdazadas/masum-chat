@@ -13,8 +13,8 @@ const ThemeAppearance = () => {
     const { showToast } = useToast();
 
     // Derived values with defaults
-    const themeMode = settings?.theme_mode || 'system';
-    const accentColor = settings?.accent_color || '#00a884';
+    const themeMode = settings?.theme_mode || 'dark';
+    const accentColor = settings?.accent_color || '#047857';
     const fontSize = settings?.font_size || 'medium';
     const chatWallpaper = settings?.chat_wallpaper || null;
 
@@ -35,21 +35,23 @@ const ThemeAppearance = () => {
         const result = await executeSecurely(async () => {
             const { data: record, error: fetchError } = await insforge.database
                 .from('user_settings')
-                .select()
+                .select('user_id')
                 .eq('user_id', userId)
                 .maybeSingle();
 
             if (fetchError) throw fetchError;
 
             if (!record) {
-                await insforge.database
+                const { error: insertError } = await insforge.database
                     .from('user_settings')
                     .insert([{ user_id: userId, ...settingsToUpdate }]);
+                if (insertError) throw insertError;
             } else {
-                await insforge.database
+                const { error: updateError } = await insforge.database
                     .from('user_settings')
                     .update(settingsToUpdate)
                     .eq('user_id', userId);
+                if (updateError) throw updateError;
             }
             return true;
         }, `Failed to update ${key.replace('_', ' ')}`);
@@ -64,8 +66,8 @@ const ThemeAppearance = () => {
         if (!userId) return;
 
         const defaultData = {
-            theme_mode: 'system',
-            accent_color: '#00a884',
+            theme_mode: 'dark',
+            accent_color: '#047857',
             font_size: 'medium',
             chat_wallpaper: null
         };
@@ -111,7 +113,15 @@ const ThemeAppearance = () => {
         { id: 'blue', color: '#e7f3ff', label: 'Sky Blue' },
         { id: 'green', color: '#e9f7eb', label: 'Mint' },
         { id: 'pink', color: '#fcecf2', label: 'Rose' },
-        { id: 'purple', color: '#f6f0fb', label: 'Lavender' }
+        { id: 'purple', color: '#f6f0fb', label: 'Lavender' },
+        { id: 'midnight', color: '#1a1a2e', label: 'Midnight' },
+        { id: 'slate', color: '#2d3436', label: 'Slate' },
+        { id: 'emerald', color: '#00392d', label: 'Emerald' },
+        { id: 'deep-purple', color: '#2d1b4d', label: 'Deep Purple' },
+        { id: 'crimson', color: '#3d080e', label: 'Crimson' },
+        { id: 'charcoal', color: '#121212', label: 'Charcoal' },
+        { id: 'forest', color: '#0a1d12', label: 'Forest' },
+        { id: 'royal', color: '#0a1a3d', label: 'Royal' }
     ];
 
     return (
@@ -167,7 +177,9 @@ const ThemeAppearance = () => {
                 }
                 .section-card {
                     margin-bottom: 24px;
-                    padding: 24px;
+                    padding: 16px 20px;
+                    border-left: none;
+                    border-right: none;
                 }
                 .accent-circle {
                     width: 34px;
@@ -303,7 +315,7 @@ const ThemeAppearance = () => {
                     <div style={{ padding: '0 16px' }}>
                         {/* Theme Mode */}
                         <SectionLabel icon={<Sun size={18} />} title="Theme Mode" />
-                        <div className="profile-glass-card section-card" style={{ display: 'flex', gap: '8px', padding: '10px' }}>
+                        <div className="profile-glass-card section-card" style={{ display: 'flex', gap: '8px' }}>
                             <ThemeToggleCard
                                 active={themeMode === 'light'}
                                 onClick={() => handleUpdateSetting('theme_mode', 'light')}
@@ -355,7 +367,7 @@ const ThemeAppearance = () => {
 
                         {/* Font Size */}
                         <SectionLabel icon={<Type size={18} />} title="Font Size" />
-                        <div className="profile-glass-card section-card" style={{ padding: '8px' }}>
+                        <div className="profile-glass-card section-card">
                             <div style={{ display: 'flex', background: 'var(--secondary-color)', border: '1px solid var(--glass-border)', borderRadius: '18px', padding: '6px' }}>
                                 {(['small', 'medium', 'large'] as const).map(size => (
                                     <button

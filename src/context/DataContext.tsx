@@ -66,7 +66,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     const [messagesCache, setMessagesCache] = useState<Record<string, any[]>>(() => {
         const saved = localStorage.getItem('masum_messages_cache');
-        return saved ? JSON.parse(saved) : {};
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                Object.keys(parsed).forEach(k => {
+                    parsed[k] = parsed[k].map((m: any) => {
+                        if (!m.call_id && m.text && (m.text === 'Missed call' || m.text === 'Video call' || m.text === 'Voice call')) {
+                            m.call_id = m.id || 'legacy_call';
+                        }
+                        return m;
+                    });
+                });
+                return parsed;
+            } catch (e) { return {}; }
+        }
+        return {};
     });
     const [userPresence, setUserPresence] = useState<Record<string, string>>({});
     const [globalTyping, setGlobalTyping] = useState<Record<string, boolean>>({});
@@ -182,7 +196,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const trimmed: Record<string, any[]> = {};
         Object.keys(messagesCache).forEach(k => {
-            if (messagesCache[k]) trimmed[k] = messagesCache[k].slice(-50);
+            if (messagesCache[k]) {
+                // Filter out messages with temporary blob URLs to prevent ERR_FILE_NOT_FOUND on refresh
+                trimmed[k] = messagesCache[k]
+                    .filter((m: any) => {
+                        const hasBlob = (m.image && m.image.startsWith('blob:')) || (m.audio && m.audio.startsWith('blob:'));
+                        return !hasBlob;
+                    })
+                    .slice(-50);
+            }
         });
         localStorage.setItem('masum_messages_cache', JSON.stringify(trimmed));
     }, [messagesCache]);
@@ -251,6 +273,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setMessagesCache(prev => {
             const newCache = { ...prev };
             delete newCache[userToClear];
+
+            // Aggressive Synchronous Persistence: Update localStorage immediately
+            // to prevent any race condition during rapid navigation/refresh
+            try {
+                const saved = localStorage.getItem('masum_messages_cache');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    delete parsed[userToClear];
+                    localStorage.setItem('masum_messages_cache', JSON.stringify(parsed));
+                }
+            } catch (err) {
+                console.warn('Silent sync persistence failure:', err);
+            }
+
             return newCache;
         });
 
@@ -344,11 +380,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Fallback: Create default settings if missing
             const defaultSettings = {
                 user_id: userId,
-                privacy_mode: true,
-                stealth_notifications: true,
-                auto_delete_hours: 24,
+                theme: 'default',
+                theme_mode: 'dark',
+                accent_color: '#7F3DFF',
+                read_receipts: true,
+                disappearing_messages_duration: 0,
                 in_app_sound: false,
-                last_updated: new Date().toISOString()
+                updated_at: new Date().toISOString()
             };
 
             const { data: created } = await insforge.database.from('user_settings').insert([defaultSettings]).select().maybeSingle();
@@ -595,14 +633,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     replyToData = {
                         id: parentMsg.id,
                         text: parentMsg.text,
-                        username: parentMsg.sender === 'me' ? 'me' : contact.username
+                        username: parentMsg.sender === 'me' ? 'me' : contact.username,
+                        mediaType: parentMsg.mediaType
                     };
                 } else {
                     // Placeholder if parent message isn't in local cache
+                    // Try to discover it from payload if possible (rare but good for consistency)
                     replyToData = {
                         id: payload.reply_to,
                         text: "Message",
-                        username: "User"
+                        username: "User",
+                        mediaType: undefined
                     };
                 }
             }
@@ -621,7 +662,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
 
-            // Update Cache
             const incoming: any = {
                 id: payload.id,
                 clientId: payload.clientId || payload.id,
@@ -634,6 +674,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 audioDuration: payload.audio_duration || undefined,
                 mediaType: payload.video_url ? 'video' : (payload.image_url ? 'image' : (payload.audio_url ? 'audio' : undefined)),
                 is_deleted: payload.is_deleted || false,
+                call_id: payload.call_id || null,
                 replyTo: replyToData
             };
 

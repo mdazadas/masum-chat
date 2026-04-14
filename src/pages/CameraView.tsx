@@ -8,7 +8,7 @@ const CameraView = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const galleryInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const lightDetectorCanvasRef = useRef<HTMLCanvasElement>(null);
+
     const streamRef = useRef<MediaStream | null>(null);
     const requestCountRef = useRef(0);
 
@@ -40,62 +40,14 @@ const CameraView = () => {
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
 
-    // Auto Light Detection Loop
-    useEffect(() => {
-        if (!stream || !videoRef.current) return;
-        const video = videoRef.current;
-        let canvas = lightDetectorCanvasRef.current;
-        if (!canvas) {
-            canvas = document.createElement('canvas');
-            canvas.width = 64;
-            canvas.height = 64;
-            (lightDetectorCanvasRef as any).current = canvas;
+    // Manual Night Mode Toggle
+    const toggleNightMode = () => {
+        const newState = !isLowLight;
+        setIsLowLight(newState);
+        if (stream) {
+            triggerLowLightConstraints(stream, newState);
         }
-
-        const detectLight = () => {
-            if (!video || !canvas) return;
-            // Only analyze if video is actively playing
-            if (video.readyState < 2) return;
-
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (!ctx) return;
-
-            try {
-                // Draw a downsampled frame to minimize CPU usage
-                ctx.drawImage(video, 0, 0, 64, 64);
-                const imageData = ctx.getImageData(0, 0, 64, 64).data;
-                let sumLuminance = 0;
-                let sampleCount = 0;
-
-                // Sample every 4th pixel for speed
-                for (let i = 0; i < imageData.length; i += 16) {
-                    const r = imageData[i];
-                    const g = imageData[i + 1];
-                    const b = imageData[i + 2];
-                    // Standard luminance formula
-                    sumLuminance += (0.299 * r + 0.587 * g + 0.114 * b);
-                    sampleCount++;
-                }
-
-                const avgLuminance = sumLuminance / sampleCount;
-
-                // Aggressive low light threshold (under ~100 out of 255 covers most indoor/dim lighting)
-                const DARKEN_THRESHOLD = 100;
-
-                if (avgLuminance < DARKEN_THRESHOLD && !isLowLight) {
-                    setIsLowLight(true);
-                    triggerLowLightConstraints(stream, true);
-                } else if (avgLuminance > DARKEN_THRESHOLD + 20 && isLowLight) {
-                    // Add hysteresis (+20) so it doesn't flicker
-                    setIsLowLight(false);
-                    triggerLowLightConstraints(stream, false);
-                }
-            } catch (err) { }
-        };
-
-        const intervalId = setInterval(detectLight, 1000);
-        return () => clearInterval(intervalId);
-    }, [stream, isLowLight]);
+    };
 
     // Apply hardware constraints to brighten the feed
     const triggerLowLightConstraints = async (activeStream: MediaStream, lowLightOn: boolean) => {
@@ -142,8 +94,14 @@ const CameraView = () => {
 
     useEffect(() => {
         startCamera();
-        return () => stopCamera();
+        // Do NOT return stopCamera() here. Otherwise, React calls it synchronously on state change,
+        // which clears the video feed before startCamera() can freeze the last frame.
     }, [isFrontCamera]);
+
+    // Handle complete cleanup ONLY when leaving the page
+    useEffect(() => {
+        return () => stopCamera(true);
+    }, []);
 
     // Handle Flash/Torch
     useEffect(() => {
@@ -160,13 +118,12 @@ const CameraView = () => {
     }, [flashOn, stream, isFrontCamera]);
 
     const startCamera = async (retryWithVideoOnly = false) => {
-        stopCamera();
+        stopCamera(false); // Freeze last frame instead of showing black screen
 
         const currentReq = ++requestCountRef.current;
 
-        // Wait for the hardware to fully release the previous camera track.
-        // This is strictly required on Android Chrome to prevent 'NotReadableError' when switching lenses.
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Reduced wait to 10ms for instant snappy switching.
+        await new Promise(resolve => setTimeout(resolve, 10));
 
         setPermissionError(null);
         setIsLowLight(false);
@@ -175,11 +132,10 @@ const CameraView = () => {
             const constraints: MediaStreamConstraints = {
                 video: {
                     facingMode: isFrontCamera ? 'user' : 'environment',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                    // Removed initial advanced focus constraints as they crash front-facing cameras on many devices.
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 },
-                audio: retryWithVideoOnly ? false : true // Decouple audio if requested
+                audio: retryWithVideoOnly ? false : true
             };
 
             const newStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -207,7 +163,6 @@ const CameraView = () => {
 
             // Automatic Fallback: If Audio failed/denied, try Video Only
             if (!retryWithVideoOnly && (err.name === 'NotAllowedError' || err.name === 'NotFoundError' || err.name === 'PermissionDeniedError')) {
-                console.log("Audio failed/denied, retrying with Video only...");
                 return startCamera(true);
             }
 
@@ -225,17 +180,15 @@ const CameraView = () => {
         }
     };
 
-    const stopCamera = () => {
+    const stopCamera = (clearVideo = true) => {
         const activeStream = streamRef.current || stream;
         if (activeStream) {
-            // Reverting constraints right before track.stop() causes race conditions in WebRTC on some devices
-            // Just stop the tracks, the hardware reset will handle the rest natively.
             activeStream.getTracks().forEach(track => {
                 track.stop();
             });
             setStream(null);
             streamRef.current = null;
-            if (videoRef.current) {
+            if (clearVideo && videoRef.current) {
                 videoRef.current.srcObject = null;
             }
         }
@@ -300,9 +253,8 @@ const CameraView = () => {
                 const avgLuminance = sumLuminance / sampleCount;
                 console.log(`Captured photo average luminance: ${avgLuminance.toFixed(2)} / 255`);
 
-                // 3. Apply Dynamic Enhancement if dark
-                // A bright office is ~150-200. A standard room is ~90-120. Dark is < 70.
-                if (avgLuminance < 110) {
+                // 3. Apply Dynamic Enhancement if Night Mode is manually ON
+                if (isLowLight) {
                     // Calculate dynamic multipliers. 
                     // The darker it is, the stronger the multiplier, but capped to avoid white-out.
                     // E.g., if avgLuminance is 55, ratio is 110/55 = 2.0. We cap brightness boost to max 1.6x
@@ -801,12 +753,16 @@ const CameraView = () => {
                     <X size={28} />
                 </button>
                 <div style={{ display: 'flex', gap: '15px' }}>
-                    {isLowLight && (
-                        <div className="night-mode-indicator fade-in">
-                            <Moon size={20} color="#ffd700" fill="#ffd700" />
-                        </div>
-                    )}
-                    {mode === 'photo' && !isRecording && (
+                    <button className="cam-control-btn" onClick={toggleNightMode} title="Toggle Night Mode">
+                        {isLowLight ? (
+                            <div className="night-mode-indicator fade-in">
+                                <Moon size={24} color="#ffd700" fill="#ffd700" />
+                            </div>
+                        ) : (
+                            <Moon size={24} color="white" />
+                        )}
+                    </button>
+                    {!isFrontCamera && (
                         <button className="cam-control-btn" onClick={() => setFlashOn(!flashOn)}>
                             {flashOn ? <Zap size={24} color="#ffd700" /> : <ZapOff size={24} />}
                         </button>
@@ -861,7 +817,7 @@ const CameraView = () => {
                 <div className="mode-selector">
                     <button
                         className={`mode-btn ${mode === 'video' ? 'active' : ''}`}
-                        onClick={() => { setMode('video'); startCamera(); }}
+                        onClick={() => setMode('video')}
                     >
                         VIDEO
                     </button>

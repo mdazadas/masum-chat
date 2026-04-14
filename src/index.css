@@ -1,6 +1,8 @@
 :root {
   --primary-color: #00a884;
   --primary-dark: #008069;
+  --primary-hover: #00bf96;
+  --primary-light: #e6f6f3;
   --primary-glow: rgba(0, 168, 132, 0.3);
   --secondary-color: #f0f2f5;
   --surface-color: #ffffff;
@@ -8,6 +10,8 @@
   --text-secondary: #667781;
   --error-color: #ea0038;
   --border-color: #e9edef;
+  --border-subtle: #f0f2f5;
+  --bg-surface-secondary: #f8f9fa;
   --input-bg: #ffffff;
   --shadow-sm: 0 1px 0.5px rgba(11, 20, 26, 0.08);
   --shadow-md: 0 2px 5px rgba(11, 20, 26, 0.12);
@@ -49,26 +53,28 @@
 }
 
 [data-theme='dark'] {
-  --secondary-color: #0b141a;
-  --background-color: #0b141a;
-  --surface-color: #111b21;
+  --secondary-color: #04070a;
+  --background-color: #04070a;
+  --surface-color: #12181d;
   --text-primary: #e9edef;
   --text-secondary: #8696a0;
   --border-color: #222d34;
+  --border-subtle: #2a3942;
+  --bg-surface-secondary: #12181d;
   --input-bg: #2a3942;
-  --glass-bg: rgba(17, 27, 33, 0.92);
+  --glass-bg: rgba(4, 7, 10, 0.92);
   --glass-border: rgba(255, 255, 255, 0.05);
   --shadow-sm: 0 1px 0.5px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 2px 5px rgba(0, 0, 0, 0.4);
 
   /* Message Bubble Variables - Dark Mode */
   --message-sent-bg: var(--primary-color);
-  --message-received-bg: #202c33;
+  --message-received-bg: #1b272e;
   --message-sent-text: #e9edef;
   --message-received-text: #e9edef;
   --message-time-sent: rgba(233, 237, 239, 0.65);
   --message-time-received: rgba(134, 150, 160, 0.7);
-  --tick-color: rgba(233, 237, 239, 0.65);
+  --tick-color: rgba(255, 255, 255, 0.6);
   --focus-glow: 0 0 0 4px rgba(0, 168, 132, 0.25);
 
   /* Call Status Variables - Dark */
@@ -1330,6 +1336,11 @@ body {
 
 .message-status-icon {
   margin-right: 4px;
+  --tick-pending: #8e8e8e;
+  --tick-sent: #8e8e8e;
+  --tick-delivered: #8e8e8e;
+  --tick-blue: #34b7f1;
+  --bubble-received-text: var(--text-primary);
   color: var(--text-secondary);
 }
 
@@ -1626,21 +1637,26 @@ body {
 }
 
 .message-reply-context {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: rgba(0, 0, 0, 0.06);
   border-left: 3px solid var(--primary-color);
   border-radius: 6px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
+  gap: 3px;
+  font-size: 13.5px;
   cursor: pointer;
   overflow: hidden;
+  transition: opacity 0.2s;
+}
+
+.message-reply-context:active {
+  opacity: 0.7;
 }
 
 [data-theme='dark'] .message-reply-context {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.08); /* Inside received bubble */
 }
 
 .message-reply-name {
@@ -1653,7 +1669,21 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12.5px;
+  font-size: 13px;
+}
+
+/* Sender Bubble Reply Box Overrides */
+.message-sent .message-reply-context {
+  background-color: rgba(0, 0, 0, 0.15); /* Darker overlay for green/colored bubbles */
+  border-left: 3px solid rgba(255, 255, 255, 0.85); /* White solid border contrast */
+}
+
+.message-sent .message-reply-name {
+  color: rgba(255, 255, 255, 0.95); /* Bright white name */
+}
+
+.message-sent .message-reply-text {
+  color: rgba(255, 255, 255, 0.75); /* Soft white text */
 }
 
 /* Specific text block inside bubble */
@@ -1902,9 +1932,10 @@ body {
   justify-content: flex-end;
   align-items: center;
   gap: 4px;
-  margin-top: 2px;
-  margin-left: 8px;
-  /* Push to right */
+  margin-top: -12px; /* Pull up to save space */
+  margin-bottom: -4px;
+  position: relative;
+  z-index: 2;
 }
 
 .message-time {
@@ -1928,8 +1959,14 @@ body {
 }
 
 .tick-sent, .tick-delivered {
-  color: var(--message-time-sent);
-  opacity: 0.8;
+  color: var(--text-secondary); /* Use stable secondary text color for better contrast */
+  opacity: 0.9;
+}
+
+[data-theme='light'] .tick-sent, 
+[data-theme='light'] .tick-delivered {
+  color: #8696a0; /* Deeper grey for light mode contrast */
+  opacity: 1;
 }
 
 .tick-blue {
@@ -2801,6 +2838,15 @@ body {
   gap: 10px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: -2px;
+  padding: 0 4px 2px 4px;
 }
 
 .btn-danger-outline:active {
@@ -3997,6 +4043,24 @@ body {
   }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+.upload-spinner-ring-small {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 
 /* ============================================================
    Audio Player � Sender Color Variants
@@ -4009,38 +4073,52 @@ body {
 }
 
 .audio-player-container.audio-received {
-  background: rgba(130, 160, 255, 0.10);
-  border: 1px solid rgba(130, 160, 255, 0.22);
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-subtle);
   border-radius: 18px;
-  padding: 10px 12px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  color: var(--text-primary);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .audio-btn-sent {
-  background: linear-gradient(135deg, #00a884 0%, #34d399 100%) !important;
+  background: linear-gradient(135deg, #25d366 0%, #128c7e 100%) !important;
   border-radius: 50%;
-  width: 40px !important;
-  height: 40px !important;
+  width: 32px !important;
+  height: 32px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 168, 132, 0.35);
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
   flex-shrink: 0;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.audio-btn-sent:active {
+  transform: scale(0.9);
 }
 
 .audio-btn-received {
-  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%) !important;
   border-radius: 50%;
-  width: 40px !important;
-  height: 40px !important;
+  width: 32px !important;
+  height: 32px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.audio-btn-received:active {
+  transform: scale(0.9);
 }
 
 /* ============================================================
@@ -4050,7 +4128,8 @@ body {
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: 210px; /* same as image */
+  aspect-ratio: 1 / 1; /* Square like QR code */
+  max-width: 280px;
   border-radius: 0;
 }
 
@@ -4911,21 +4990,23 @@ body {
 
 /* Profile & Settings Glass Card */
 .profile-glass-card {
-  background: var(--surface-color);
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
   overflow: hidden;
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 [data-theme='dark'] .profile-glass-card {
-  background: #1a2a32;
-  border-color: #263540;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  background: transparent;
+  border-color: var(--border-color);
+  box-shadow: none;
 }
 
 [data-theme='dark'] .profile-glass-card:active {
-  background: #1f3240;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* Settings group title */
@@ -5101,4 +5182,184 @@ body {
 [data-theme='dark'] .home-donation-banner .banner-btn {
   background: #ef4444 !important;
   color: white !important;
+}
+
+/* === Masum Chats Premium UI Refinements === */
+
+/* Compact Message Spacing */
+.message-bubble {
+  padding-bottom: 2px !important;
+}
+
+.media-message .message-footer {
+  margin-top: 4px !important;
+  margin-bottom: 0 !important;
+}
+
+/* Media Reply Context Styling */
+.message-reply-context {
+  background: rgba(0, 0, 0, 0.05);
+  border-left: 4px solid var(--primary-color);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  transition: background 0.2s;
+}
+
+.dark .message-reply-context {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.message-reply-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary-color);
+}
+
+.reply-media-icon {
+  color: var(--primary-color);
+  opacity: 0.9;
+}
+
+.reply-type-label {
+  font-weight: 600;
+  color: var(--primary-color);
+  font-size: 13px;
+}
+
+.reply-text-content {
+  font-size: 13px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Consistent Media Sizing (QR Code Size) */
+.message-image-content {
+  width: 260px !important;
+  height: 260px !important;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+}
+
+.video-player-container {
+  width: 260px !important;
+  height: 260px !important;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.video-player-container video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Modern Audio Player v2 */
+.modern-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  width: 240px;
+  background: transparent;
+}
+
+.audio-play-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.audio-play-btn:active {
+  transform: scale(0.9);
+}
+
+.audio-progress-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audio-seek-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+}
+
+.dark .audio-seek-bar {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.audio-progress-fill {
+  height: 100%;
+  background: var(--primary-color);
+  border-radius: 2px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.audio-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  opacity: 0.9;
+}
+
+.dark .audio-time-row {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Upload Progress Spinners */
+.upload-progress-overlay-audio {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: inherit;
+}
+
+.dark .upload-progress-overlay-audio {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.spinner-audio {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(0, 168, 132, 0.2);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin-audio 0.8s linear infinite;
+}
+
+@keyframes spin-audio {
+  to { transform: rotate(360deg); }
 }

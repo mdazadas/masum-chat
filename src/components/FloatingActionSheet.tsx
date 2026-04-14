@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 interface FloatingActionSheetProps {
@@ -16,8 +16,26 @@ const FloatingActionSheet: React.FC<FloatingActionSheetProps> = ({
     subtitle,
     children
 }) => {
+    const [canClose, setCanClose] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setCanClose(false);
+            // 400ms delay prevents synthetic clicks from touchend events
+            // that occur immediately after the modal opens from dismissing it.
+            const timer = setTimeout(() => setCanClose(true), 400);
+            return () => clearTimeout(timer);
+        }
+    }, [isOpen]);
+
+    const handleBackdropClick = () => {
+        if (canClose) {
+            onClose();
+        }
+    };
+
     return createPortal(
-        <div className={`fas-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}>
+        <div className={`fas-overlay ${isOpen ? 'open' : ''}`} onClick={handleBackdropClick}>
             <div
                 className={`fas-container ${isOpen ? 'open' : ''}`}
                 onClick={e => e.stopPropagation()}

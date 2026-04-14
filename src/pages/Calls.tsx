@@ -208,10 +208,32 @@ const Calls = () => {
                                 </div>
                                 {group.map((call, idx) => {
                                     const party = call.otherParty;
-                                    const isMissed = call.status === 'missed';
-                                    const callColor = isMissed ? '#ef4444' : call.isIncoming ? '#22c55e' : 'var(--primary-color)';
-                                    const CallIcon = isMissed ? PhoneMissed : call.isIncoming ? PhoneIncoming : PhoneOutgoing;
+                                    const isIncomingMissed = call.status === 'missed' && call.isIncoming;
+                                    const isUnanswered = call.status === 'missed' && !call.isIncoming;
+                                    const isConnected = call.status === 'completed';
+                                    
+                                    const callColor = isIncomingMissed ? '#ef4444' : call.isIncoming ? '#22c55e' : 'var(--primary-color)';
+                                    const CallIcon = isIncomingMissed ? PhoneMissed : call.isIncoming ? PhoneIncoming : PhoneOutgoing;
                                     const isVideo = call.type === 'video';
+
+                                    const formatDuration = (seconds?: number) => {
+                                        if (!seconds) return '';
+                                        const h = Math.floor(seconds / 3600);
+                                        const m = Math.floor((seconds % 3600) / 60);
+                                        const s = seconds % 60;
+                                        if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                                        return `${m}:${s.toString().padStart(2, '0')}`;
+                                    };
+
+                                    let statusText = '';
+                                    if (isIncomingMissed) statusText = 'Missed';
+                                    else if (isUnanswered) statusText = 'Unanswered';
+                                    else if (isConnected) {
+                                        const dur = formatDuration(call.duration);
+                                        statusText = call.isIncoming ? `Incoming (${dur})` : `Outgoing (${dur})`;
+                                    } else {
+                                        statusText = call.isIncoming ? 'Incoming' : 'Outgoing';
+                                    }
 
                                     return (
                                         <div
@@ -228,7 +250,7 @@ const Calls = () => {
                                                     <span className="chat-name" style={{
                                                         fontWeight: 600,
                                                         fontSize: '16px',
-                                                        color: isMissed ? '#ef4444' : 'var(--text-primary)'
+                                                        color: isIncomingMissed ? '#ef4444' : 'var(--text-primary)'
                                                     }}>
                                                         {party.name || `@${party.username}`}
                                                     </span>
@@ -239,7 +261,7 @@ const Calls = () => {
                                                 <div className="chat-row" style={{ marginTop: 4 }}>
                                                     <span style={{ fontSize: '14px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                                                         <CallIcon size={16} color={callColor} />
-                                                        {call.isIncoming ? (isMissed ? 'Missed' : 'Incoming') : 'Outgoing'}
+                                                        {statusText}
                                                     </span>
 
                                                     <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>

@@ -2,11 +2,9 @@ import React, { useState, useRef, useEffect, useCallback, memo, useLayoutEffect 
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
-    ArrowLeft, Phone, Video, Check, CheckCheck, MoreVertical,
-    Paperclip, Send, Trash2, Mic, Camera, Plus, X, Copy,
-    Reply, RefreshCcw, ImagePlay, FileText, User, Clock,
-    Play, Pause, Image as ImageIcon, PhoneIncoming, PhoneOutgoing, PhoneMissed,
-    Search, Palette, Ban, AlertCircle, Download
+    ArrowLeft, MoreVertical, Phone, Video, Send, Smile, Paperclip, Mic, X, Reply, Trash2, Copy, Check, CheckCheck, Play, Pause, Download, Volume2, Camera, Image as ImageIcon, FileText, User, ImagePlay, Plus,
+    RefreshCcw, Clock, PhoneIncoming, PhoneOutgoing, PhoneMissed,
+    Search, Palette, Ban, AlertCircle, Info, CornerUpRight
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useToast } from '../context/ToastContext';
@@ -35,124 +33,77 @@ interface Message {
     optimistic?: boolean;
     uploadProgress?: number;
     call_id?: number | null;
+    callDuration?: number;
+    callStatus?: string;
+    callType?: string;
     replyTo?: {
         id: number;
         text: string;
         username: string;
+        mediaType?: 'image' | 'video' | 'audio';
     } | null;
     created_at?: string;
+    read_at?: string | null;
 }
 
-const AudioPlayer = ({ src, duration: initialDuration, sender }: { src: string; duration?: string; sender?: 'me' | 'other' }) => {
-    const isSent = sender === 'me';
+const AudioPlayer = memo(({ src, initialDuration, sender, uploading }: { src: string; initialDuration?: string; sender?: 'me' | 'other'; uploading?: boolean }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
-    const [duration, setDuration] = useState(initialDuration || "0:00");
-    const audioRef = useRef<HTMLAudioElement>(null);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
 
-    const fmt = (s: number) => {
-        if (!isFinite(s)) return '0:00';
-        const m = Math.floor(s / 60);
-        const sec = Math.floor(s % 60);
-        return `${m}:${sec.toString().padStart(2, '0')}`;
-    };
-
-    const togglePlay = () => {
-        if (!audioRef.current) return;
-        if (isPlaying) {
-            audioRef.current.pause();
-        } else {
-            audioRef.current.play();
-        }
-        setIsPlaying(!isPlaying);
-    };
-
-    const handleTimeUpdate = () => {
-        if (!audioRef.current) return;
-        const current = audioRef.current.currentTime;
-        const total = audioRef.current.duration;
-        if (total) {
-            setProgress((current / total) * 100);
-            if (isPlaying) setDuration(fmt(current));
-        }
-    };
-
-    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!audioRef.current) return;
-        const val = Number(e.target.value);
-        audioRef.current.currentTime = (val / 100) * audioRef.current.duration;
-        setProgress(val);
-        setDuration(fmt(audioRef.current.currentTime));
-    };
-
-    const handleEnded = () => {
-        setIsPlaying(false);
-        setProgress(0);
-        if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            if (audioRef.current.duration && audioRef.current.duration !== Infinity) {
-                setDuration(fmt(audioRef.current.duration));
-            } else if (initialDuration) {
-                setDuration(initialDuration);
-            } else {
-                setDuration("0:00");
+    useEffect(() => {
+        if (audioRef.current && initialDuration) {
+            const parts = initialDuration.split(':');
+            if (parts.length === 2) {
+                setDuration(parseInt(parts[0]) * 60 + parseInt(parts[1]));
             }
         }
+    }, [initialDuration]);
+
+    const togglePlay = () => {
+        if (audioRef.current) {
+            if (isPlaying) audioRef.current.pause();
+            else audioRef.current.play();
+            setIsPlaying(!isPlaying);
+        }
+    };
+
+    const onTimeUpdate = () => {
+        if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+            setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100);
+        }
+    };
+
+    const formatTime = (time: number) => {
+        if (!time || isNaN(time)) return '0:00';
+        const m = Math.floor(time / 60);
+        const s = Math.floor(time % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
     return (
-        <div className={`audio-player-container modern-audio ${isSent ? 'audio-sent' : 'audio-received'}`}>
-            <audio
-                ref={audioRef}
-                src={src}
-                onTimeUpdate={handleTimeUpdate}
-                onEnded={handleEnded}
-                onPause={() => {
-                    if (audioRef.current && audioRef.current.duration && audioRef.current.duration !== Infinity) {
-                        setDuration(fmt(audioRef.current.duration));
-                    } else if (initialDuration) {
-                        setDuration(initialDuration);
-                    }
-                }}
-                onLoadedMetadata={() => {
-                    if (audioRef.current) {
-                        // WebM duration hack for Chrome/Recording
-                        if (audioRef.current.duration === Infinity || isNaN(audioRef.current.duration)) {
-                            audioRef.current.currentTime = 1e101;
-                            setTimeout(() => {
-                                if (audioRef.current) {
-                                    audioRef.current.currentTime = 0;
-                                    const d = fmt(audioRef.current.duration);
-                                    if (d !== '0:00') setDuration(d);
-                                    else if (initialDuration) setDuration(initialDuration);
-                                }
-                            }, 200);
-                        } else {
-                            const d = fmt(audioRef.current.duration);
-                            setDuration(d);
-                        }
-                    }
-                }}
-            />
-            <button className={`audio-play-btn ${isSent ? 'audio-btn-sent' : 'audio-btn-received'}`} onClick={togglePlay}>
-                {isPlaying ? <Pause size={20} color="white" fill="white" /> : <Play size={20} color="white" fill="white" />}
+        <div className={`audio-player-container v2 ${sender === 'me' ? 'audio-sent' : 'audio-received'}`} style={{ width: '155px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <audio ref={audioRef} src={src} onTimeUpdate={onTimeUpdate} onEnded={() => setIsPlaying(false)} onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)} />
+            <button className={sender === 'me' ? 'audio-btn-sent' : 'audio-btn-received'} onClick={togglePlay} style={{ width: '32px', height: '32px' }}>
+                {isPlaying ? <Pause size={14} fill="white" /> : <Play size={14} fill="white" style={{ marginLeft: '1px' }} />}
             </button>
-            <div className="audio-content-area">
-                <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={progress}
-                    onChange={handleSeek}
-                    className={`audio-seek-bar-simple ${isSent ? 'seek-sent' : 'seek-received'}`}
-                />
-                <div className="audio-meta-row">
-                    <span className="audio-duration-text">{duration}</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div style={{ width: '100%', height: '4px', background: sender === 'me' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ width: `${progress}%`, height: '100%', background: sender === 'me' ? 'white' : 'var(--primary-color)', transition: 'width 0.1s linear' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: sender === 'me' ? 'white' : 'var(--text-primary)', opacity: 1 }}>
+                        {isPlaying ? `${formatTime(currentTime)} / ${initialDuration || formatTime(duration)}` : (initialDuration || formatTime(duration))}
+                    </span>
+                    {uploading && <RefreshCcw size={10} className="spin" style={{ color: sender === 'me' ? 'white' : 'var(--primary-color)' }} />}
                 </div>
             </div>
         </div>
     );
-};
+});
 
 const DateSeparator = ({ date }: { date: string }) => (
     <div className="date-separator">
@@ -170,8 +121,6 @@ const SwipeableMessage = memo(({
     messageRef,
     firstUnreadMessageId,
     initialUnreadCount,
-    navigate,
-    username,
     showDateSeparator,
     dateLabel,
     onRetry,
@@ -181,7 +130,6 @@ const SwipeableMessage = memo(({
     const [swipeX, setSwipeX] = useState(0);
     const [isSwiping, setIsSwiping] = useState(false);
     const [isPressing, setIsPressing] = useState(false);
-    // mediaLoaded starts true for already-delivered messages (no upload in progress)
     const touchStartX = useRef(0);
     const swipeThreshold = 60;
 
@@ -247,7 +195,6 @@ const SwipeableMessage = memo(({
                         className="message-wrapper"
                         style={{
                             alignItems: msg.sender === 'me' ? 'flex-end' : 'flex-start',
-                            // Only animate messages created very recently (within the last 15 seconds)
                             animation: (msg.optimistic || (msg.id > Date.now() - 15000)) ? 'messageSlideIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards' : 'none'
                         }}
                     >
@@ -274,13 +221,19 @@ const SwipeableMessage = memo(({
                                             <span className="message-reply-name">
                                                 {msg.replyTo.username === 'me' ? 'You' : msg.replyTo.username}
                                             </span>
-                                            <span className="message-reply-text">
-                                                {msg.replyTo.text}
+                                            <span className="message-reply-text" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                {msg.replyTo.mediaType === 'image' && <ImageIcon size={14} className="reply-media-icon" />}
+                                                {msg.replyTo.mediaType === 'video' && <Video size={14} className="reply-media-icon" />}
+                                                {msg.replyTo.mediaType === 'audio' && <Mic size={14} className="reply-media-icon" />}
+                                                {msg.replyTo.mediaType ? (
+                                                    <span className="reply-type-label">{msg.replyTo.mediaType === 'image' ? 'Photo' : msg.replyTo.mediaType === 'video' ? 'Video' : 'Audio'}</span>
+                                                ) : null}
+                                                {msg.replyTo.text && <span className="reply-text-content">{msg.replyTo.text}</span>}
                                             </span>
                                         </div>
                                     )}
                                     {msg.image && msg.mediaType !== 'audio' && (
-                                        <div style={{ margin: '-10px -14px 6px -14px', borderRadius: '8px 8px 0 0', overflow: 'hidden', position: 'relative', minWidth: '240px' }}>
+                                        <div style={{ margin: '-10px -14px 6px -14px', borderRadius: '8px 8px 0 0', overflow: 'hidden', position: 'relative', width: '260px', height: '260px' }}>
                                             {msg.mediaType === 'video' ? (
                                                 <div
                                                     className={`video-thumb-wrapper ${msg.uploading ? 'skeleton-shimmer media-uploading-structure' : ''}`}
@@ -318,10 +271,9 @@ const SwipeableMessage = memo(({
                                                     )}
                                                 </div>
                                             ) : (
-                                                /* Image wrapper — fixed 210px height matching video */
                                                 <div
                                                     className={msg.uploading ? 'media-uploading-structure skeleton-shimmer' : ''}
-                                                    style={{ position: 'relative', width: '100%', height: '210px', cursor: msg.uploading ? 'default' : 'pointer' }}
+                                                    style={{ position: 'relative', width: '260px', height: '260px', cursor: msg.uploading ? 'default' : 'pointer' }}
                                                     onClick={() => !msg.uploading && onPreviewImage({ url: msg.image!, type: msg.mediaType || 'image' })}
                                                 >
                                                     <img
@@ -355,44 +307,71 @@ const SwipeableMessage = memo(({
                                     )}
 
                                     {msg.audio && (
-                                        <AudioPlayer src={msg.audio} duration={msg.audioDuration} sender={msg.sender} />
+                                        <div style={{ position: 'relative' }}>
+                                            <AudioPlayer src={msg.audio} initialDuration={msg.audioDuration} sender={msg.sender} uploading={msg.uploading} />
+                                            {(msg.optimistic || msg.uploading) && (
+                                                <div className="upload-progress-overlay-audio">
+                                                    <div className="upload-spinner-ring-small" />
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
 
                                     {msg.call_id ? (
-                                            <div className="call-message-bubble">
-                                                <div className="call-info-row">
-                                                    <div className="call-icon-container" style={{
-                                                        background: msg.text.includes('Missed') ? 'var(--call-missed-bg)' : 'var(--call-active-bg)',
-                                                        color: msg.text.includes('Missed') ? 'var(--error-color)' : 'var(--success-color)'
-                                                    }}>
-                                                        {msg.text.includes('Video') ? <Video size={18} /> : <Phone size={18} />}
-                                                    </div>
-                                                    <div className="call-text-content">
-                                                        <span className="call-type-label">{msg.text}</span>
-                                                        <div className="call-status-sub">
-                                                            {msg.sender === 'me' ? (
-                                                                <PhoneOutgoing size={12} style={{ marginRight: 4 }} />
-                                                            ) : (
-                                                                msg.text.includes('Missed') ?
-                                                                    <PhoneMissed size={12} style={{ marginRight: 4 }} /> :
-                                                                    <PhoneIncoming size={12} style={{ marginRight: 4 }} />
-                                                            )}
-                                                            {msg.sender === 'me' ? 'Outgoing' : (msg.text.includes('Missed') ? 'Missed' : 'Incoming')}
+                                        (() => {
+                                            const isIncomingCall = msg.sender === 'other';
+                                            const cType = msg.callType || (msg.text.includes('Video') ? 'video' : 'voice');
+                                            const isMissedList = msg.callStatus === 'missed' || msg.text.includes('Missed');
+                                            const isIncomingMissed = isMissedList && isIncomingCall;
+                                            const isUnanswered = isMissedList && !isIncomingCall;
+                                            const isConnectedC = msg.callStatus === 'completed' || (!isMissedList);
+
+                                            const formatDuration = (seconds?: number) => {
+                                                if (!seconds) return '';
+                                                const h = Math.floor(seconds / 3600);
+                                                const m = Math.floor((seconds % 3600) / 60);
+                                                const s = seconds % 60;
+                                                if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                                                return `${m}:${s.toString().padStart(2, '0')}`;
+                                            };
+
+                                            let callTitle = cType === 'video' ? 'Video call' : 'Voice call';
+                                            if (isIncomingMissed) callTitle = 'Missed call';
+
+                                            let callSubtitle = '';
+                                            if (isIncomingMissed) callSubtitle = 'Missed';
+                                            else if (isUnanswered) callSubtitle = 'Unanswered';
+                                            else if (isConnectedC) {
+                                                const dur = formatDuration(msg.callDuration);
+                                                callSubtitle = dur ? (isIncomingCall ? `Incoming (${dur})` : `Outgoing (${dur})`) : (isIncomingCall ? 'Incoming' : 'Outgoing');
+                                            } else {
+                                                callSubtitle = isIncomingCall ? 'Incoming' : 'Outgoing';
+                                            }
+
+                                            return (
+                                                <div className={`message-text ${msg.image ? 'media-text-container' : ''}`} style={{ padding: '8px 12px', minWidth: '130px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: isIncomingMissed ? 'var(--error-color)' : 'inherit' }}>
+                                                            {cType === 'video' ? <Video size={20} /> : <Phone size={20} />}
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                            <span style={{ fontSize: '15.5px', color: isIncomingMissed ? 'var(--error-color)' : 'inherit', fontWeight: 500 }}>
+                                                                {callTitle}
+                                                            </span>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.85, marginTop: '1px' }}>
+                                                                {!isIncomingCall ? (
+                                                                    <PhoneOutgoing size={12} />
+                                                                ) : (
+                                                                    isIncomingMissed ? <PhoneMissed size={12} color="var(--error-color)" /> : <PhoneIncoming size={12} />
+                                                                )}
+                                                                <span style={{ fontSize: '12.5px' }}>{callSubtitle}</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    className="call-again-btn"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const type = msg.text.includes('Video') ? 'video' : 'voice';
-                                                        navigate(`/call/${username}?type=${type}`);
-                                                    }}
-                                                >
-                                                    {msg.text.includes('Missed') ? 'Call Back' : 'Call Again'}
-                                                </button>
-                                            </div>
-                                        ) : (
+                                            );
+                                        })()
+                                    ) : (
                                             msg.text && (
                                                 <div className={`message-text ${msg.image ? 'media-text-container' : ''}`}>
                                                     {msg.text}
@@ -402,44 +381,48 @@ const SwipeableMessage = memo(({
                                     </>
                                 )}
 
-                                <div className="message-footer" style={{ marginTop: msg.is_deleted ? '4px' : '2px' }}>
-                                    <span className="message-time">{msg.time}</span>
+                                <div className="message-footer" style={{ marginTop: msg.text ? '4px' : '-16px', position: msg.text ? 'relative' : 'absolute', bottom: msg.text ? 'auto' : '6px', right: msg.text ? 'auto' : '8px', zIndex: 10 }}>
+                                    {msg.mediaType !== 'audio' && (
+                                        <span className="message-time">
+                                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : msg.time}
+                                        </span>
+                                    )}
                                     {!msg.is_deleted && msg.sender === 'me' && (
-                                                <span className="status-ticks">
-                                                    {msg.status === 'failed' ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                                                            <div title="Failed to send" style={{ display: 'flex', alignItems: 'center' }}>
-                                                                <AlertCircle size={14} color="var(--error-color)" />
-                                                                <span style={{ fontSize: '10px', color: 'var(--error-color)', fontWeight: 700, marginLeft: '4px' }}>Failed</span>
-                                                            </div>
-                                                            <div style={{ display: 'flex', gap: '4px' }}>
-                                                                <button
-                                                                    className="failed-action-btn"
-                                                                    onClick={(e) => { e.stopPropagation(); onRetry(msg); }}
-                                                                    style={{ background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
-                                                                >
-                                                                    Retry
-                                                                </button>
-                                                                <button
-                                                                    className="failed-action-btn"
-                                                                    onClick={(e) => { e.stopPropagation(); onDeleteFailed(msg); }}
-                                                                    style={{ background: 'var(--call-missed-bg)', color: 'var(--error-color)', border: '1px solid var(--call-missed-bg)', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
-                                                                >
-                                                                    Delete
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (msg.optimistic || msg.uploading) ? (
-                                                        <Clock size={12} className="tick-pending" />
-                                                    ) : msg.status === 'read' ? (
-                                                        <CheckCheck size={14} className="tick-blue" />
-                                                    ) : msg.status === 'delivered' ? (
-                                                        <CheckCheck size={14} className="tick-delivered" />
-                                                    ) : (
-                                                        <Check size={14} className="tick-sent" />
-                                                    )}
-                                                </span>
+                                        <span className="message-status">
+                                            {msg.status === 'failed' ? (
+                                                <div className="failed-status-container" style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end', marginTop: '4px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <AlertCircle size={14} color="var(--error-color)" />
+                                                        <span style={{ fontSize: '10px', color: 'var(--error-color)', fontWeight: 700 }}>Failed</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                                        <button
+                                                            className="failed-action-btn"
+                                                            onClick={(e) => { e.stopPropagation(); onRetry(msg); }}
+                                                            style={{ background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                                        >
+                                                            Retry
+                                                        </button>
+                                                        <button
+                                                            className="failed-action-btn"
+                                                            onClick={(e) => { e.stopPropagation(); onDeleteFailed(msg); }}
+                                                            style={{ background: 'var(--call-missed-bg)', color: 'var(--error-color)', border: '1px solid var(--call-missed-bg)', borderRadius: '12px', padding: '2px 8px', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (msg.optimistic || msg.uploading) ? (
+                                                <Clock size={12} className="tick-pending" />
+                                            ) : msg.status === 'read' ? (
+                                                <CheckCheck size={14} className="tick-blue" />
+                                            ) : msg.status === 'delivered' ? (
+                                                <CheckCheck size={14} className="tick-delivered" />
+                                            ) : (
+                                                <Check size={14} className="tick-sent" />
                                             )}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -560,7 +543,9 @@ const compressImage = (file: Blob | File | string, maxWidth = 1200, quality = 0.
     });
 };
 
-const Chat = () => {
+// Internal component that holds the chat logic. 
+// We wrap it in a keyed component to force it to remount when the user changes.
+const ChatContent = () => {
     const { username } = useParams<{ username: string }>();
     const navigate = useNavigate();
     const location = useLocation();
@@ -600,7 +585,7 @@ const Chat = () => {
         return true;
     });
     const [loadingMore, setLoadingMore] = useState(false);
-    const [hasMore, setHasMore] = useState(true);
+    const [hasMore, setHasMore] = useState(false);
     const [isBlocked, setIsBlocked] = useState(location.state?.isBlockedInitially || false);
     const [isBlockedByReceiver, setIsBlockedByReceiver] = useState(location.state?.isBlockedByReceiverInitially || false);
     const [showUnreadIndicator] = useState(false);
@@ -796,6 +781,7 @@ const Chat = () => {
             previewUrl = typeof file === 'string' ? file : URL.createObjectURL(file as Blob);
         }
 
+        const currentReply = replyingTo;
         // 2. Add optimistic message
         const newMsg: Message = {
             id: tempId,
@@ -810,6 +796,12 @@ const Chat = () => {
             image: type !== 'audio' ? previewUrl : null,
             audio: type === 'audio' ? previewUrl : null,
             audioDuration: duration,
+            replyTo: currentReply ? {
+                id: currentReply.id,
+                text: currentReply.text,
+                username: currentReply.sender === 'me' ? 'me' : (receiver?.username || username!),
+                mediaType: currentReply.mediaType
+            } : null,
             optimistic: true
         };
 
@@ -827,11 +819,15 @@ const Chat = () => {
                 ...prev[idx],
                 preview,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-                lastMessageAt: new Date().toISOString()
+                lastMessageAt: new Date().toISOString(),
+                lastMsgStatus: 'sent',
+                isLastMsgMe: true
             };
             const rest = prev.filter((_, i) => i !== idx);
             return [updated, ...rest].sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
         });
+
+        setReplyingTo(null);
 
         try {
             // 3. Convert string (base64/blob URL) to actual Blob if necessary
@@ -875,6 +871,7 @@ const Chat = () => {
                 sender_id: currentUserId,
                 receiver_id: currentReceiverId,
                 text: caption || null,
+                reply_to: currentReply ? currentReply.id : null,
                 is_seen: false,
             };
 
@@ -977,13 +974,10 @@ const Chat = () => {
                     const msgRes = await insforge.database
                         .from('messages')
                         .select(`
-                                                    *,
-                                                    reply_to (
-                                                    id,
-                                                    text,
-                                                    sender_id
-                                                    )
-                                                    `)
+                            *,
+                            reply_to (id, text, sender_id, image_url, video_url, audio_url),
+                            calls (id, duration, status, type)
+                        `)
                         .or(`and(sender_id.eq.${userId},receiver_id.eq.${pid}),and(sender_id.eq.${pid},receiver_id.eq.${userId})`)
                         .order('created_at', { ascending: false })
                         .limit(50);
@@ -1000,13 +994,18 @@ const Chat = () => {
                             mediaType: m.video_url ? 'video' : (m.audio_url ? 'audio' : (m.image_url ? 'image' : undefined)),
                             audio: m.audio_url || null,
                             audioDuration: m.audio_duration || undefined,
+                            call_id: m.call_id || null,
+                            callDuration: m.calls?.duration || undefined,
+                            callStatus: m.calls?.status || undefined,
+                            callType: m.calls?.type || undefined,
                             time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
                             sender: m.sender_id === userId ? 'me' : 'other',
                             status: m.is_seen ? 'read' : (m.is_delivered ? 'delivered' : 'sent'),
                             replyTo: m.reply_to ? {
                                 id: m.reply_to.id,
                                 text: m.reply_to.text,
-                                username: m.reply_to.sender_id === userId ? 'me' : profile.username
+                                username: m.reply_to.sender_id === userId ? 'me' : profile.username,
+                                mediaType: m.reply_to.video_url ? 'video' : (m.reply_to.audio_url ? 'audio' : (m.reply_to.image_url ? 'image' : undefined))
                             } : null
                         }));
 
@@ -1118,13 +1117,10 @@ const Chat = () => {
             const { data: olderMsgs, error: loadErr } = await insforge.database
                 .from('messages')
                 .select(`
-                                                    *,
-                                                    reply_to (
-                                                    id,
-                                                    text,
-                                                    sender_id
-                                                    )
-                                                    `)
+                    *,
+                    reply_to (id, text, sender_id, image_url, video_url, audio_url),
+                    calls (id, duration, status, type)
+                `)
                 .or(`and(sender_id.eq.${userId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${userId})`)
                 .lt('id', oldestMsgId)
                 .order('created_at', { ascending: false })
@@ -1141,13 +1137,18 @@ const Chat = () => {
                     mediaType: m.video_url ? 'video' : (m.audio_url ? 'audio' : (m.image_url ? 'image' : undefined)),
                     audio: m.audio_url || null,
                     audioDuration: m.audio_duration || undefined,
+                    call_id: m.call_id || null,
+                    callDuration: m.calls?.duration || undefined,
+                    callStatus: m.calls?.status || undefined,
+                    callType: m.calls?.type || undefined,
                     time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
                     sender: m.sender_id === userId ? 'me' : 'other',
                     status: m.is_seen ? 'read' : (m.is_delivered ? 'delivered' : 'sent'),
                     replyTo: m.reply_to ? {
                         id: m.reply_to.id,
                         text: m.reply_to.text,
-                        username: m.reply_to.sender_id === userId ? 'me' : username!
+                        username: m.reply_to.sender_id === userId ? 'me' : username!,
+                        mediaType: m.reply_to.video_url ? 'video' : (m.reply_to.audio_url ? 'audio' : (m.reply_to.image_url ? 'image' : undefined))
                     } : null
                 }));
                 setMessages(prev => {
@@ -1521,7 +1522,8 @@ const Chat = () => {
             replyTo: currentReply ? {
                 id: currentReply.id,
                 text: currentReply.text,
-                username: currentReply.sender === 'me' ? 'me' : username!
+                username: currentReply.sender === 'me' ? 'me' : username!,
+                mediaType: currentReply.mediaType || (currentReply.image ? 'image' : currentReply.video ? 'video' : currentReply.audio ? 'audio' : undefined)
             } : null,
             optimistic: true
         };
@@ -1540,7 +1542,9 @@ const Chat = () => {
                 ...prev[idx],
                 preview: textToSend.substring(0, 45),
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-                lastMessageAt: new Date().toISOString()
+                lastMessageAt: new Date().toISOString(),
+                lastMsgStatus: 'sent',
+                isLastMsgMe: true
             };
             const rest = prev.filter((_, i) => i !== idx);
             return [updated, ...rest].sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
@@ -1837,6 +1841,11 @@ const Chat = () => {
 
             if (err2) throw err2;
 
+            // Step 3: Clear local cache instantly (both global and component local)
+            setMessages([]);
+            setHasMore(false);
+            if (username) clearLocalChat(username);
+
             showToast('Chat history cleared permanently', 'info');
             navigate('/home');
         } catch (err) {
@@ -1847,14 +1856,6 @@ const Chat = () => {
         }
     };
 
-    if (loading && !messages.length) {
-        return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--surface-color)', gap: '16px' }}>
-                <div className="spinner" style={{ width: 40, height: 40, borderWidth: 4 }} />
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', animation: 'pulse 2s infinite' }}>Loading chat...</p>
-            </div>
-        );
-    }
 
     return (
         <div
@@ -1882,7 +1883,9 @@ const Chat = () => {
                             {getPresenceStatus() === 'Online' && <div className="chat-header-status-dot" />}
                         </div>
                         <div className="chat-header-text-container">
-                            <span className="chat-header-name">{receiver?.name || `@${username}`}</span>
+                            <div className="chat-header-name-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span className="chat-header-name">{receiver?.name || `@${username}`}</span>
+                            </div>
                             <span className="chat-header-status">
                                 {getPresenceStatus()}
                             </span>
@@ -2021,8 +2024,6 @@ const Chat = () => {
                             }}
                             firstUnreadMessageId={firstUnreadMessageId}
                             initialUnreadCount={initialUnreadCount}
-                            navigate={navigate}
-                            username={username}
                             showDateSeparator={showDateSeparator}
                             dateLabel={dateLabel}
                             onRetry={handleRetryMessage}
@@ -2175,7 +2176,15 @@ const Chat = () => {
                                     <span className="reply-preview-name">
                                         Replying to {replyingTo.sender === 'me' ? 'yourself' : username}
                                     </span>
-                                    <span className="reply-preview-text">{replyingTo.text}</span>
+                                    <span className="reply-preview-text" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        {replyingTo.mediaType === 'image' && <ImageIcon size={14} style={{ color: 'var(--primary-color)' }} />}
+                                        {replyingTo.mediaType === 'video' && <Video size={14} style={{ color: 'var(--primary-color)' }} />}
+                                        {replyingTo.mediaType === 'audio' && <Mic size={14} style={{ color: 'var(--primary-color)' }} />}
+                                        {replyingTo.mediaType ? (
+                                            <span className="reply-type-label" style={{ color: 'var(--primary-color)', fontWeight: 700 }}>{replyingTo.mediaType === 'image' ? 'Photo' : replyingTo.mediaType === 'video' ? 'Video' : 'Audio'}</span>
+                                        ) : null}
+                                        {replyingTo.text && <span style={{ marginLeft: replyingTo.mediaType ? '2px' : '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyingTo.text}</span>}
+                                    </span>
                                 </div>
                                 <button
                                     className="reply-close-btn"
@@ -2313,12 +2322,33 @@ const Chat = () => {
                 longPressedMsg && createPortal(
                     <div className="overlay-backdrop" onClick={() => setLongPressedMsg(null)} style={{ zIndex: 3000, backdropFilter: 'blur(5px)', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, transform: 'none' }}>
                         <div className="profile-glass-card" onClick={(e) => e.stopPropagation()} style={{ padding: '8px', borderRadius: '24px', minWidth: '240px', maxWidth: '80%', backgroundColor: 'var(--surface-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '8px 4px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '20px', marginBottom: '4px' }}>
+                                {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                    <span key={emoji} onClick={() => { showToast('Reaction sent', 'info'); setLongPressedMsg(null); }} className="ripple" style={{ fontSize: '24px', cursor: 'pointer', padding: '6px', borderRadius: '50%', transition: 'transform 0.2s' }} onMouseDown={e => e.currentTarget.style.transform = 'scale(0.8)'} onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}>
+                                        {emoji}
+                                    </span>
+                                ))}
+                            </div>
                             <div className="menu-item" onClick={copyMessage} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
                                 <Copy size={20} color="var(--primary-color)" /> Copy Text
                             </div>
                             <div className="menu-item" onClick={() => { setReplyingTo(longPressedMsg); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
                                 <Reply size={20} color="var(--primary-color)" /> Reply
                             </div>
+                            <div className="menu-item" onClick={() => { showToast('Forwarding feature coming in next update', 'info'); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <CornerUpRight size={20} color="var(--primary-color)" /> Forward
+                            </div>
+                            <div className="menu-item" onClick={() => { showToast('Message Pinned to top', 'success'); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <span style={{ fontSize: '18px' }}>📌</span> Pin to Top
+                            </div>
+                            <div className="menu-item" onClick={() => { showToast('Message Starred', 'success'); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                <span style={{ fontSize: '18px' }}>⭐</span> Star Message
+                            </div>
+                            {longPressedMsg.sender === 'me' && (
+                                <div className="menu-item" onClick={() => { showToast(`Message Info: Sent at ${new Date(longPressedMsg.created_at || (longPressedMsg.id > 10000000000 ? longPressedMsg.id : Date.now())).toLocaleString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}`, 'info'); setLongPressedMsg(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+                                    <Info size={20} color="var(--primary-color)" /> Message Info
+                                </div>
+                            )}
                             <div className="menu-item" onClick={() => deleteMessage(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', fontSize: '15px', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
                                 <Trash2 size={20} color="var(--text-secondary)" /> Delete for me
                             </div>
@@ -2483,6 +2513,15 @@ const Chat = () => {
             </FloatingActionSheet>
         </div >
     );
+};
+
+// Keyed Wrapper: This is the secret to zero-ghosting.
+// By giving the component a 'key' that changes with the username, 
+// React will fully destroy and recreate the entire chat interface
+// immediately when you switch users, wiping away all old state.
+const Chat = () => {
+    const { username } = useParams();
+    return <ChatContent key={username} />;
 };
 
 export default Chat;

@@ -10,6 +10,7 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import { useData } from '../context/DataContext';
 import Avatar from '../components/Avatar';
 import FloatingActionSheet from '../components/FloatingActionSheet';
+import { compressImage } from '../utils/compressImage';
 
 const MyProfile = () => {
     const navigate = useNavigate();
@@ -114,10 +115,17 @@ const MyProfile = () => {
             setShowPhotoSheet(false);
             setLoading(true);
             try {
+                let uploadBlob: File | Blob = file;
+                try {
+                    uploadBlob = await compressImage(file, 800); // Super compressed for avatars
+                } catch (cErr) {
+                    console.warn("Compression failed, using original file");
+                }
+
                 const filePath = `${userId}/avatar-${Date.now()}`;
                 const { data: uploadData, error: uploadErr } = await insforge.storage
                     .from('avatars')
-                    .upload(filePath, file);
+                    .upload(filePath, uploadBlob);
 
                 if (uploadErr || !uploadData) throw uploadErr || new Error('Upload failed');
                 const avatarUrl = uploadData.url;
@@ -511,26 +519,31 @@ const MyProfile = () => {
                     margin-top: 32px;
                 }
                 .premium-field-card {
-                    background: var(--surface-color);
-                    border-radius: 20px;
-                    padding: 20px;
-                    margin-bottom: 16px;
-                    border: 1px solid var(--border-color);
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.04);
-                    transition: transform 0.2s, box-shadow 0.2s;
+                    background: transparent;
+                    border-radius: 0;
+                    padding: 16px 20px;
+                    margin-bottom: 0;
+                    border: none;
+                    border-bottom: 1px solid var(--border-color);
+                    box-shadow: none;
+                    transition: background-color 0.2s;
                 }
                 [data-theme='dark'] .premium-field-card {
-                    background: #1a2a32;
-                    border-color: #263540;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+                    background: transparent;
+                    border-color: var(--border-color);
+                    box-shadow: none;
+                }
+                .premium-field-card:last-child {
+                    border-bottom: none;
                 }
                 .premium-field-card.readonly {
                     background: transparent;
-                    border: 1px dashed var(--border-color);
+                    border: none;
+                    border-bottom: 1px dashed var(--border-color);
                     box-shadow: none;
                 }
                 [data-theme='dark'] .premium-field-card.readonly {
-                    border-color: #263540;
+                    border-color: var(--border-color);
                 }
                 .field-header {
                     display: flex;
