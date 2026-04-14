@@ -42,7 +42,7 @@ export const compressImage = async (file: File | Blob, maxWidthOrHeight: number 
                 ctx.drawImage(img, 0, 0, width, height);
 
                 // Start at 0.8 quality
-                let quality = 0.8;
+                const quality = 0.8;
                 canvas.toBlob((blob) => {
                     if (!blob) {
                         resolve(file);
